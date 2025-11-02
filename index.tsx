@@ -77,6 +77,18 @@ const App = () => {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
           }
+          @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+          @keyframes scaleIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+          }
+          @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+          }
 
           /* --- UTILITY & COMPONENT STYLES --- */
           .card {
@@ -160,6 +172,63 @@ const App = () => {
             align-items: center;
             gap: var(--spacing-2);
             animation: fadeIn 0.3s ease-out;
+          }
+
+          /* --- MOBILE-FIRST RESPONSIVE DESIGN --- */
+          @media (max-width: 768px) {
+            body {
+              font-size: 16px; /* Prevent zoom on input focus */
+            }
+            .section-title {
+              font-size: 18px;
+              margin-bottom: var(--spacing-4);
+            }
+            .button {
+              padding: var(--spacing-4) var(--spacing-4);
+              font-size: 13px;
+              min-height: 44px; /* Touch-friendly minimum */
+              letter-spacing: 0.5px;
+            }
+            .card {
+              border-radius: 12px;
+            }
+            .save-status-indicator {
+              bottom: 16px;
+              left: var(--spacing-3);
+              right: var(--spacing-3);
+              transform: none;
+              font-size: 13px;
+              padding: var(--spacing-3) var(--spacing-4);
+            }
+          }
+
+          @media (max-width: 480px) {
+            .button {
+              font-size: 12px;
+              padding: var(--spacing-3) var(--spacing-4);
+            }
+          }
+
+          /* --- TOUCH-FRIENDLY ENHANCEMENTS --- */
+          @media (hover: none) and (pointer: coarse) {
+            .button {
+              min-height: 48px;
+              padding: var(--spacing-4) var(--spacing-5);
+            }
+            input, select, textarea {
+              font-size: 16px; /* Prevent iOS zoom */
+            }
+          }
+
+          /* --- UTILITY CLASSES --- */
+          .fade-in {
+            animation: fadeIn 0.3s ease-out;
+          }
+          .slide-up {
+            animation: slideUp 0.4s ease-out;
+          }
+          .scale-in {
+            animation: scaleIn 0.3s ease-out;
           }
         `}
       </style>

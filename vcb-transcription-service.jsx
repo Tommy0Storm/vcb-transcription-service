@@ -663,28 +663,54 @@ const generateWaveformSvg = (waveformData) => {
 
 // --- SUB-COMPONENTS ---
 
-const AppHeader = () => (
-    <header style={{ 
-        backgroundColor: 'var(--color-on-surface)',
-        color: 'var(--color-surface)',
-        padding: 'var(--spacing-4) var(--spacing-5)',
-        borderRadius: 'var(--border-radius)',
-        marginBottom: 'var(--spacing-8)',
-        display: 'flex', 
-        alignItems: 'center', 
-        gap: 'var(--spacing-5)', 
-    }}>
-        <Logo />
-        <div>
-            <h1 style={{ fontWeight: 700, fontSize: '28px', color: 'var(--color-surface)', margin: 0, letterSpacing: '1px', textTransform: 'uppercase' }}>
-                VCB AI Transcription
-            </h1>
-            <p style={{ fontWeight: 300, fontSize: '16px', lineHeight: 1.5, margin: 'var(--spacing-2) 0 0 0', color: 'var(--color-border)' }}>
-                Enterprise-grade transcription and analysis service.
-            </p>
-        </div>
-    </header>
-);
+const AppHeader = () => {
+    const [isMobile, setIsMobile] = useState(false);
+
+    useEffect(() => {
+        const checkMobile = () => setIsMobile(window.innerWidth <= 768);
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
+
+    return (
+        <header style={{
+            backgroundColor: 'var(--color-on-surface)',
+            color: 'var(--color-surface)',
+            padding: isMobile ? 'var(--spacing-5) var(--spacing-4)' : 'var(--spacing-5) var(--spacing-6)',
+            borderRadius: isMobile ? '12px' : 'var(--border-radius)',
+            marginBottom: isMobile ? 'var(--spacing-6)' : 'var(--spacing-8)',
+            display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
+            alignItems: isMobile ? 'center' : 'center',
+            gap: isMobile ? 'var(--spacing-4)' : 'var(--spacing-5)',
+            textAlign: isMobile ? 'center' : 'left'
+        }}>
+            <Logo />
+            <div style={{ flex: 1 }}>
+                <h1 style={{
+                    fontWeight: 700,
+                    fontSize: isMobile ? '20px' : '28px',
+                    color: 'var(--color-surface)',
+                    margin: 0,
+                    letterSpacing: '1px',
+                    textTransform: 'uppercase'
+                }}>
+                    VCB AI Transcription
+                </h1>
+                <p style={{
+                    fontWeight: 300,
+                    fontSize: isMobile ? '14px' : '16px',
+                    lineHeight: 1.5,
+                    margin: 'var(--spacing-2) 0 0 0',
+                    color: 'var(--color-border)'
+                }}>
+                    {isMobile ? 'AI-Powered Audio Transcription' : 'Enterprise-grade transcription and analysis service.'}
+                </p>
+            </div>
+        </header>
+    );
+};
 
 const TierDescription = ({ icon, title, description }) => (
     <div style={{ flex: '1 1 300px', display: 'flex', gap: 'var(--spacing-4)', alignItems: 'flex-start', padding: 'var(--spacing-5)', backgroundColor: 'var(--color-background)', borderRadius: 'var(--border-radius)' }}>
@@ -698,49 +724,274 @@ const TierDescription = ({ icon, title, description }) => (
 
 const UploadSection = ({ onFileSelect, onClearAll, files }) => {
     const fileInputRef = useRef(null);
+    const [isDragging, setIsDragging] = useState(false);
+    const [showTierInfo, setShowTierInfo] = useState(false);
+
+    const handleDragOver = (e) => {
+        e.preventDefault();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = (e) => {
+        e.preventDefault();
+        setIsDragging(false);
+    };
+
+    const handleDrop = (e) => {
+        e.preventDefault();
+        setIsDragging(false);
+        const droppedFiles = e.dataTransfer.files;
+        if (droppedFiles.length > 0) {
+            const event = { target: { files: droppedFiles } };
+            onFileSelect(event);
+        }
+    };
+
     return (
-        <section className="card" style={{ padding: 'var(--spacing-6)' }}>
-            <h2 className="section-title">Upload & Process</h2>
-            <div style={{ marginBottom: 'var(--spacing-6)', display: 'flex', gap: 'var(--spacing-4)', flexWrap: 'wrap' }}>
-                <TierDescription icon={<StandardTierIcon />} title="Standard" description="Fast & cost-effective. Ideal for meeting notes and general use. Uses VCB-AI-Flash." />
-                <TierDescription icon={<EnhancedTierIcon />} title="Enhanced" description="Higher accuracy for noisy audio or multiple speakers. Uses VCB-AI-Pro." />
-                <TierDescription icon={<LegalTierIcon />} title="Legal" description="Verbatim, court-ready format with no PII redaction. Uses VCB-AI-Pro." />
+        <section>
+            {/* Hero Upload Area */}
+            <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className="card scale-in"
+                style={{
+                    padding: 'var(--spacing-8)',
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    border: isDragging ? '3px solid var(--color-on-surface)' : '2px dashed var(--color-border)',
+                    backgroundColor: isDragging ? 'var(--color-highlight)' : 'var(--color-surface)',
+                    transition: 'all 0.3s ease',
+                    minHeight: '280px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 'var(--spacing-5)'
+                }}
+            >
+                <div style={{
+                    width: '80px',
+                    height: '80px',
+                    borderRadius: '50%',
+                    backgroundColor: 'var(--color-on-surface)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--color-surface)',
+                    fontSize: '36px',
+                    transition: 'transform 0.3s ease',
+                    transform: isDragging ? 'scale(1.1)' : 'scale(1)'
+                }}>
+                    📎
+                </div>
+                <div>
+                    <h2 style={{
+                        fontSize: '24px',
+                        fontWeight: 700,
+                        margin: '0 0 var(--spacing-3) 0',
+                        textTransform: 'uppercase',
+                        letterSpacing: '1px'
+                    }}>
+                        {isDragging ? 'Drop Your Files Here' : 'Upload Audio Files'}
+                    </h2>
+                    <p style={{
+                        fontSize: '16px',
+                        fontWeight: 300,
+                        color: 'var(--color-on-surface-secondary)',
+                        margin: 0,
+                        lineHeight: 1.6
+                    }}>
+                        Drag and drop or click to browse
+                    </p>
+                    <p style={{
+                        fontSize: '14px',
+                        fontWeight: 300,
+                        color: 'var(--color-on-surface-secondary)',
+                        margin: 'var(--spacing-2) 0 0 0'
+                    }}>
+                        Supports MP3, WAV, M4A, and more • Max 32MB per file
+                    </p>
+                </div>
+                <button
+                    className="button button-primary"
+                    style={{
+                        pointerEvents: 'none',
+                        fontSize: '16px',
+                        padding: 'var(--spacing-4) var(--spacing-6)'
+                    }}
+                >
+                    BROWSE FILES
+                </button>
             </div>
-            <input ref={fileInputRef} type="file" multiple accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac,.wma,.opus" onChange={onFileSelect} style={{ display: 'none' }} aria-label="File uploader" />
-            <div style={{ display: 'flex', gap: 'var(--spacing-4)', flexWrap: 'wrap', alignItems: 'center' }}>
-                <button onClick={() => fileInputRef.current?.click()} className="button button-primary">SELECT FILES</button>
-                {files.length > 0 && <button onClick={onClearAll} className="button button-secondary">CLEAR ALL</button>}
+
+            <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac,.wma,.opus"
+                onChange={onFileSelect}
+                style={{ display: 'none' }}
+                aria-label="File uploader"
+            />
+
+            {/* Tier Info - Progressive Disclosure */}
+            <div style={{ marginTop: 'var(--spacing-5)', textAlign: 'center' }}>
+                <button
+                    onClick={() => setShowTierInfo(!showTierInfo)}
+                    className="button button-secondary"
+                    style={{ fontSize: '13px' }}
+                >
+                    {showTierInfo ? 'HIDE' : 'SHOW'} PROCESSING TIERS INFO
+                </button>
             </div>
+
+            {showTierInfo && (
+                <div className="slide-up" style={{
+                    marginTop: 'var(--spacing-5)',
+                    display: 'grid',
+                    gap: 'var(--spacing-4)',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))'
+                }}>
+                    <TierDescription icon={<StandardTierIcon />} title="Standard" description="Fast & cost-effective. Ideal for meeting notes and general use. Uses VCB-AI-Flash." />
+                    <TierDescription icon={<EnhancedTierIcon />} title="Enhanced" description="Higher accuracy for noisy audio or multiple speakers. Uses VCB-AI-Pro." />
+                    <TierDescription icon={<LegalTierIcon />} title="Legal" description="Verbatim, court-ready format with no PII redaction. Uses VCB-AI-Pro." />
+                </div>
+            )}
+
+            {files.length > 0 && (
+                <div className="fade-in" style={{ marginTop: 'var(--spacing-5)', textAlign: 'center' }}>
+                    <button onClick={onClearAll} className="button button-secondary">
+                        CLEAR ALL FILES
+                    </button>
+                </div>
+            )}
         </section>
     );
 };
 
-const TierButton = ({ onClick, children }) => (
-    <button onClick={onClick} className="button" style={{ flex: 1, minWidth: '100px', fontSize: '12px', padding: 'var(--spacing-2) var(--spacing-3)', backgroundColor: 'var(--color-surface)', color: 'var(--color-on-surface)', border: '1px solid var(--color-border)', fontWeight: 500 }}>
-        {children}
+const TierButton = ({ onClick, children, icon }) => (
+    <button
+        onClick={onClick}
+        className="button"
+        style={{
+            flex: 1,
+            minWidth: '120px',
+            fontSize: '13px',
+            padding: 'var(--spacing-4) var(--spacing-4)',
+            backgroundColor: 'var(--color-on-surface)',
+            color: 'var(--color-surface)',
+            border: 'none',
+            fontWeight: 500,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 'var(--spacing-2)',
+            minHeight: '80px'
+        }}
+    >
+        <span style={{ fontSize: '20px' }}>{icon}</span>
+        <span>{children}</span>
     </button>
 );
 
 const FileItem = ({ file, onTranscribe, onRemove }) => (
-    <div className="card" style={{ padding: 'var(--spacing-5)', display: 'flex', flexDirection: 'column', gap: 'var(--spacing-4)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--spacing-4)' }}>
-            <div style={{ flex: 1, minWidth: '250px' }}>
-                <div style={{ fontWeight: 500, fontSize: '16px', marginBottom: 'var(--spacing-2)', wordBreak: 'break-all', textTransform: 'uppercase' }}>{file.name}</div>
-                <div style={{ fontWeight: 300, fontSize: '14px', color: 'var(--color-on-surface-secondary)', display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', flexWrap: 'wrap' }}>
-                    <span>{file.size} MB</span><span>•</span>
-                    <span style={{ color: file.status === 'completed' ? 'var(--color-success)' : file.status === 'error' ? 'var(--color-danger)' : 'var(--color-on-surface-secondary)', fontWeight: 500 }}>{file.status.toUpperCase()}</span>
+    <div className="card slide-up" style={{ padding: 'var(--spacing-5)', display: 'flex', flexDirection: 'column', gap: 'var(--spacing-4)', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 'var(--spacing-4)' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                    fontWeight: 600,
+                    fontSize: '15px',
+                    marginBottom: 'var(--spacing-2)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                }}>
+                    {file.name}
+                </div>
+                <div style={{
+                    fontWeight: 300,
+                    fontSize: '13px',
+                    color: 'var(--color-on-surface-secondary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'var(--spacing-2)',
+                    flexWrap: 'wrap'
+                }}>
+                    <span>{file.size} MB</span>
+                    <span>•</span>
+                    <span style={{
+                        color: file.status === 'completed' ? 'var(--color-success)' : file.status === 'error' ? 'var(--color-danger)' : 'var(--color-on-surface-secondary)',
+                        fontWeight: 500,
+                        textTransform: 'uppercase',
+                        fontSize: '12px'
+                    }}>
+                        {file.status}
+                    </span>
                 </div>
             </div>
-            <button onClick={() => onRemove(file.id)} title="Remove file" className="button-secondary" style={{ padding: 'var(--spacing-2)', border: 'none' }}><RemoveIcon /></button>
+            <button
+                onClick={() => onRemove(file.id)}
+                title="Remove file"
+                className="button button-secondary"
+                style={{
+                    padding: 'var(--spacing-2)',
+                    minWidth: 'auto',
+                    flexShrink: 0
+                }}
+            >
+                <RemoveIcon />
+            </button>
         </div>
-        {file.error && <div style={{ padding: 'var(--spacing-3)', backgroundColor: '#F8F9FA', border: '2px solid var(--color-on-surface)', color: 'var(--color-on-surface)', borderRadius: '6px', fontSize: '14px', lineHeight: 1.5, fontWeight: '500' }}><strong>Error:</strong> {file.error}</div>}
+
+        {file.error && (
+            <div className="fade-in" style={{
+                padding: 'var(--spacing-4)',
+                backgroundColor: '#F8F9FA',
+                border: '2px solid var(--color-on-surface)',
+                color: 'var(--color-on-surface)',
+                borderRadius: '8px',
+                fontSize: '14px',
+                lineHeight: 1.6,
+                fontWeight: 300
+            }}>
+                <strong style={{ fontWeight: 600 }}>Error:</strong> {file.error}
+            </div>
+        )}
+
         {file.status === 'pending' && (
-            <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 'var(--spacing-4)' }}>
-                <label style={{ fontWeight: 700, fontSize: '12px', marginBottom: 'var(--spacing-3)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--color-on-surface-secondary)' }}>Choose Tier to Start Transcription</label>
-                <div style={{ display: 'flex', gap: 'var(--spacing-3)', flexWrap: 'wrap' }}>
-                    <TierButton onClick={() => onTranscribe(file, 'Standard')}>Standard</TierButton>
-                    <TierButton onClick={() => onTranscribe(file, 'Enhanced')}>Enhanced</TierButton>
-                    <TierButton onClick={() => onTranscribe(file, 'Legal')}>Legal</TierButton>
+            <div style={{
+                borderTop: '1px solid var(--color-border)',
+                paddingTop: 'var(--spacing-5)',
+                marginTop: 'var(--spacing-2)'
+            }}>
+                <label style={{
+                    fontWeight: 600,
+                    fontSize: '13px',
+                    marginBottom: 'var(--spacing-4)',
+                    display: 'block',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    color: 'var(--color-on-surface)',
+                    textAlign: 'center'
+                }}>
+                    Select Processing Tier
+                </label>
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
+                    gap: 'var(--spacing-3)'
+                }}>
+                    <TierButton onClick={() => onTranscribe(file, 'Standard')} icon="⚡">
+                        STANDARD
+                    </TierButton>
+                    <TierButton onClick={() => onTranscribe(file, 'Enhanced')} icon="🎯">
+                        ENHANCED
+                    </TierButton>
+                    <TierButton onClick={() => onTranscribe(file, 'Legal')} icon="⚖️">
+                        LEGAL
+                    </TierButton>
                 </div>
             </div>
         )}
@@ -1845,34 +2096,62 @@ const VCBTranscriptionService = () => {
     
     const completedFiles = files.filter(f => f.status === 'completed');
     const pendingFiles = files.filter(f => f.status !== 'completed');
-    
+    const [isMobile, setIsMobile] = useState(false);
+
+    useEffect(() => {
+        const checkMobile = () => setIsMobile(window.innerWidth <= 768);
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
+
     return (
-        <div style={{ maxWidth: '1200px', margin: 'auto', padding: 'var(--spacing-7) var(--spacing-5)' }}>
+        <div style={{
+            maxWidth: '1200px',
+            margin: 'auto',
+            padding: isMobile ? 'var(--spacing-5) var(--spacing-4)' : 'var(--spacing-7) var(--spacing-5)'
+        }}>
             <AppHeader />
-            <main style={{ display: 'grid', gap: 'var(--spacing-8)' }}>
+            <main style={{
+                display: 'grid',
+                gap: isMobile ? 'var(--spacing-6)' : 'var(--spacing-8)'
+            }}>
                 <UploadSection onFileSelect={handleFileSelect} onClearAll={handleClearAll} files={files} />
-                
-                <section>
-                     <h2 className="section-title">Processing Queue & Results</h2>
-                     {files.length === 0 ? (
-                        <div style={{ textAlign: 'center', padding: 'var(--spacing-8) 0', border: '2px dashed var(--color-border)', borderRadius: 'var(--border-radius)', color: 'var(--color-on-surface-secondary)' }}>
-                            <p style={{ margin: 0, fontSize: '16px', fontWeight: 500 }}>Your queue is empty.</p>
-                            <p style={{ margin: 'var(--spacing-2) 0 0 0' }}>Select files above to begin transcription.</p>
-                        </div>
-                     ) : (
+
+                {files.length > 0 && (
+                    <section>
+                         <h2 className="section-title" style={{
+                             fontSize: isMobile ? '16px' : '20px',
+                             marginBottom: isMobile ? 'var(--spacing-4)' : 'var(--spacing-6)'
+                         }}>
+                             {pendingFiles.length > 0 ? 'Processing Queue' : 'Your Transcriptions'}
+                         </h2>
                          <div style={{ display: 'grid', gap: 'var(--spacing-5)' }}>
                              {pendingFiles.map(file => <FileItem key={file.id} file={file} onTranscribe={transcribeAudio} onRemove={handleRemove} />)}
                              {completedFiles.map(file => <ResultCard key={file.id} file={file} onExport={exportTranscription} onTranslate={handleTranslate} onUpdateFile={updateFile} audioContext={audioContextRef.current} onGenerateSummary={handleGenerateSummary} onExtractActionItems={handleExtractActionItems} onToggleTidiedView={handleToggleTidiedView} showToast={showToast} />)}
                          </div>
-                     )}
-                </section>
+                    </section>
+                )}
             </main>
-            <footer style={{ textAlign: 'center', marginTop: 'var(--spacing-8)', paddingTop: 'var(--spacing-6)', borderTop: '1px solid var(--color-border)', fontSize: '14px', color: 'var(--color-on-surface-secondary)' }}>
-                <p style={{ fontWeight: '600', color: 'var(--color-on-surface)', marginBottom: 'var(--spacing-4)' }}>
-                    Privacy Commitment: We do not save your recordings or transcripts to any servers. Your session is preserved locally in your browser for your convenience.
+            <footer style={{
+                textAlign: 'center',
+                marginTop: isMobile ? 'var(--spacing-7)' : 'var(--spacing-8)',
+                paddingTop: 'var(--spacing-6)',
+                borderTop: '1px solid var(--color-border)',
+                fontSize: isMobile ? '12px' : '14px',
+                color: 'var(--color-on-surface-secondary)'
+            }}>
+                <p style={{
+                    fontWeight: '500',
+                    color: 'var(--color-on-surface)',
+                    marginBottom: 'var(--spacing-4)',
+                    lineHeight: 1.6,
+                    fontSize: isMobile ? '13px' : '14px'
+                }}>
+                    Privacy First: Your recordings stay private. All processing happens securely.
                 </p>
-                <p>VCB AI Transcription Service • Enterprise V4.0 Premium</p>
-                <p style={{ marginTop: 'var(--spacing-2)' }}>Powered by VCB-AI-Flash & VCB-AI-Pro models.</p>
+                <p>VCB AI Transcription Service • V4.0</p>
+                {!isMobile && <p style={{ marginTop: 'var(--spacing-2)' }}>Powered by VCB-AI-Flash & VCB-AI-Pro models.</p>}
             </footer>
              {saveStatus !== 'idle' && (
                 <div className="save-status-indicator">
