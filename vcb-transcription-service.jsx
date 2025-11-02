@@ -1326,11 +1326,18 @@ const VCBTranscriptionService = () => {
                         return `[${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}]`;
                     };
                     result = {
-                        transcription: parsedJson.map(segment => ({
-                            speaker: segment.speaker || "SPEAKER 1",
-                            timestamp: formatSecondsToTimestamp(segment.start),
-                            dialogue: segment.text || ""
-                        })),
+                        transcription: parsedJson.map(segment => {
+                            let speaker = segment.speaker || "SPEAKER 1";
+                            // Normalize "n/a", "N/A", "null", or empty strings to default speaker (§1.3)
+                            if (!speaker || speaker.toString().toLowerCase() === 'n/a' || speaker.toString().toLowerCase() === 'null') {
+                                speaker = "SPEAKER 1";
+                            }
+                            return {
+                                speaker,
+                                timestamp: formatSecondsToTimestamp(segment.start),
+                                dialogue: segment.text || ""
+                            };
+                        }),
                         speakerProfiles: [{ speaker: "SPEAKER 1", gender: "unknown" }],
                         detailedAnalysis: { sentenceComplexity: { readabilityScore: "N/A", wordsPerSentence: "N/A" }, keywordDensity: [] }
                     };
@@ -1365,7 +1372,11 @@ const VCBTranscriptionService = () => {
                                            JSON.stringify(segment);
 
                             // Try multiple field name variations for speaker
-                            const speaker = segment.speaker || segment.name || segment.speakerName || "SPEAKER 1";
+                            let speaker = segment.speaker || segment.name || segment.speakerName || "SPEAKER 1";
+                            // Normalize "n/a", "N/A", "null", or empty strings to default speaker (§1.3)
+                            if (!speaker || speaker.toString().toLowerCase() === 'n/a' || speaker.toString().toLowerCase() === 'null') {
+                                speaker = "SPEAKER 1";
+                            }
 
                             // Try multiple field name variations for timestamp
                             let timestamp;
