@@ -1,11 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git init:*)",
+      "Bash(npm run dev:*)",
       "Bash(git add:*)",
-      "Bash(git commit -m \"$(cat <<''EOF''\nInitial commit: VCB AI Transcription Service - Enterprise Edition\n\nComprehensive React-based transcription service with Google Gemini AI integration.\nEnterprise-grade implementation with zero-tolerance error handling and VCB Cleaner Theme compliance.\n\nFeatures:\n- Multi-tier transcription (Standard/Enhanced/Legal)\n- 10 South African official languages support\n- Speaker identification and voice synthesis\n- Translation and analysis capabilities\n- DOCX export with legal certification\n\nTechnical Enhancements (§1.3, §8.1):\n- Comprehensive API error handling with categorization\n- File upload validation (32MB limit, format checking)\n- Toast notification system (replaced all alerts)\n- Confirmation dialogs for destructive actions\n- Error boundaries with graceful fallback\n- Enhanced JSON parsing with 4 repair strategies\n- Operation cancellation framework\n- Race condition fixes for concurrent operations\n\nDesign System (§5.1-§5.2):\n- VCB Cleaner Theme: Strict monochrome palette\n- No shadows, light-grey borders only\n- Typography: Quicksand 300 (body), 500 (headings), Bold (main headings)\n- 80%+ whitespace emphasis\n\nTech Stack:\n- React 19.2.0 + TypeScript 5.8.2\n- Vite 6.2.0 build system\n- Google Generative AI (Gemini 2.5 Flash/Pro)\n- DOCX generation with jszip\n\n🤖 Generated with Claude Code (https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
-      "Bash(gh --version:*)",
-      "Bash(gh repo create:*)"
+      "Bash(git commit:*)",
+      "Bash(git push)"
     ],
     "deny": [],
     "ask": []
