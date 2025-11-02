@@ -1345,8 +1345,54 @@ const VCBTranscriptionService = () => {
                         speakerProfiles: [{ speaker: "SPEAKER 1", gender: "unknown" }],
                         detailedAnalysis: { sentenceComplexity: { readabilityScore: "N/A", wordsPerSentence: "N/A" }, keywordDensity: [] }
                     };
+                } else if (parsedJson.length > 0 && typeof parsedJson[0] === 'object' && parsedJson[0] !== null) {
+                    // Generic object array handler - attempt to extract any text-like content (§1.3)
+                    console.warn("AI returned a flat array of objects with unknown structure. Attempting flexible extraction.");
+                    const formatSecondsToTimestamp = (totalSeconds) => {
+                        const secondsNum = parseFloat(totalSeconds);
+                        if (isNaN(secondsNum)) return '[00:00:00]';
+                        const hours = Math.floor(secondsNum / 3600);
+                        const minutes = Math.floor((secondsNum % 3600) / 60);
+                        const seconds = Math.floor(secondsNum % 60);
+                        return `[${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}]`;
+                    };
+
+                    result = {
+                        transcription: parsedJson.map((segment, index) => {
+                            // Try multiple field name variations for text content
+                            const dialogue = segment.text || segment.dialogue || segment.content ||
+                                           segment.transcription || segment.transcript ||
+                                           JSON.stringify(segment);
+
+                            // Try multiple field name variations for speaker
+                            const speaker = segment.speaker || segment.name || segment.speakerName || "SPEAKER 1";
+
+                            // Try multiple field name variations for timestamp
+                            let timestamp;
+                            if (segment.timestamp) {
+                                timestamp = segment.timestamp;
+                            } else if (segment.start !== undefined) {
+                                timestamp = formatSecondsToTimestamp(segment.start);
+                            } else if (segment.time !== undefined) {
+                                timestamp = formatSecondsToTimestamp(segment.time);
+                            } else {
+                                timestamp = `[00:00:${String(index).padStart(2, '0')}]`;
+                            }
+
+                            return { speaker, timestamp, dialogue };
+                        }),
+                        speakerProfiles: [{ speaker: "SPEAKER 1", gender: "unknown" }],
+                        detailedAnalysis: { sentenceComplexity: { readabilityScore: "N/A", wordsPerSentence: "N/A" }, keywordDensity: [] }
+                    };
+                } else if (parsedJson.length === 0) {
+                    throw new Error("AI returned an empty array.");
                 } else {
-                    throw new Error("AI returned a flat array, but its content format is unknown.");
+                    // Provide diagnostic information about what was actually received (§1.3)
+                    const firstItemType = parsedJson[0] === null ? 'null' : typeof parsedJson[0];
+                    const sampleData = parsedJson.slice(0, 2).map(item =>
+                        typeof item === 'object' ? JSON.stringify(item).substring(0, 100) : String(item)
+                    ).join(', ');
+                    throw new Error(`AI returned a flat array with unexpected content type: ${firstItemType}. Sample: ${sampleData}`);
                 }
             } else {
                 throw new Error("AI response format is unexpected.");
@@ -1368,6 +1414,13 @@ const VCBTranscriptionService = () => {
             
             const timestampParser = (ts) => {
                 if (typeof ts !== 'string') return -1;
+
+                // Handle fallback "[Line N]" format from generic object array handler (§1.3)
+                const lineMatch = ts.match(/\[Line\s+(\d+)\]/i);
+                if (lineMatch) {
+                    return parseInt(lineMatch[1], 10); // Treat line number as seconds
+                }
+
                 const parts = ts.replace(/[\[\]]/g, '').split(':').map(Number);
                 if (parts.some(isNaN)) return -1;
 
@@ -1389,6 +1442,8 @@ const VCBTranscriptionService = () => {
             };
             
             let lastTimestampInSeconds = -1;
+            const hasFallbackTimestamps = timestamps.some(ts => /\[Line\s+\d+\]/i.test(ts));
+
             for (const segment of result.transcription) {
                 // Defensive validation: Check for missing/undefined timestamps (§1.3)
                 if (!segment.timestamp || typeof segment.timestamp !== 'string') {
@@ -1400,7 +1455,9 @@ const VCBTranscriptionService = () => {
                 if (currentTimestampInSeconds === -1) {
                     throw new Error(`Invalid timestamp format detected: "${segment.timestamp}"`);
                 }
-                if (currentTimestampInSeconds < lastTimestampInSeconds) {
+
+                // Skip sequential validation for fallback timestamps (§1.3)
+                if (!hasFallbackTimestamps && currentTimestampInSeconds < lastTimestampInSeconds) {
                     throw new Error(`Non-sequential timestamp detected. "${segment.timestamp}" appears before a previous timestamp (prev: ${lastTimestampInSeconds}s, curr: ${currentTimestampInSeconds}s).`);
                 }
                 lastTimestampInSeconds = currentTimestampInSeconds;
