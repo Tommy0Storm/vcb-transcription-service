@@ -1390,6 +1390,12 @@ const VCBTranscriptionService = () => {
             
             let lastTimestampInSeconds = -1;
             for (const segment of result.transcription) {
+                // Defensive validation: Check for missing/undefined timestamps (§1.3)
+                if (!segment.timestamp || typeof segment.timestamp !== 'string') {
+                    const segmentInfo = `Speaker: ${segment.speaker || 'unknown'}, Dialogue: "${(segment.dialogue || '').substring(0, 50)}${segment.dialogue?.length > 50 ? '...' : ''}"`;
+                    throw new Error(`Missing or invalid timestamp in transcription segment. ${segmentInfo}. AI returned incomplete data.`);
+                }
+
                 const currentTimestampInSeconds = timestampParser(segment.timestamp);
                 if (currentTimestampInSeconds === -1) {
                     throw new Error(`Invalid timestamp format detected: "${segment.timestamp}"`);
