@@ -1536,12 +1536,15 @@ const VCBTranscriptionService = () => {
             try {
                 parsedJson = parseAIResponse(resultText);
             } catch (error) {
+                console.error("JSON parsing failed. Raw response:", resultText.substring(0, 500));
                 throw new Error(`AI response is not valid JSON, even after attempting multiple repair strategies. Details: ${error.message}`);
             }
-            
+
+            console.log("Parsed AI response type:", typeof parsedJson, "Is array:", Array.isArray(parsedJson));
+
             if (parsedJson && parsedJson.transcription && Array.isArray(parsedJson.transcription)) {
                 result = parsedJson;
-            } 
+            }
             else if (parsedJson && Array.isArray(parsedJson)) {
                 if (parsedJson.length > 0 && typeof parsedJson[0] === 'object' && parsedJson[0] !== null && 'start' in parsedJson[0] && 'text' in parsedJson[0]) {
                     console.warn("AI returned a flat transcription array of objects. Adapting to standard format.");
@@ -1634,6 +1637,7 @@ const VCBTranscriptionService = () => {
                     throw new Error(`AI returned a flat array with unexpected content type: ${firstItemType}. Sample: ${sampleData}`);
                 }
             } else {
+                console.error("Unexpected AI response format. Type:", typeof parsedJson, "Keys:", parsedJson ? Object.keys(parsedJson) : 'null', "Sample:", JSON.stringify(parsedJson).substring(0, 200));
                 throw new Error("AI response format is unexpected.");
             }
 
