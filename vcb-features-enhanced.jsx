@@ -1173,7 +1173,6 @@ export const getSetting = async (key) => {
 const generatePayFastSignature = (data) => {
   let pfOutput = '';
   
-  // Use original order, NOT alphabetical
   for (let key in data) {
     if (data.hasOwnProperty(key) && key !== 'signature' && key !== 'passphrase') {
       if (data[key] !== '' && data[key] !== null && data[key] !== undefined) {
@@ -1187,7 +1186,13 @@ const generatePayFastSignature = (data) => {
     getString += `&passphrase=${encodeURIComponent(String(data.passphrase).trim()).replace(/%20/g, '+')}`;
   }
 
-  return CryptoJS.MD5(getString).toString();
+  console.log('=== PAYFAST SIGNATURE DEBUG ===');
+  console.log('Payload String:', getString);
+  const signature = CryptoJS.MD5(getString).toString();
+  console.log('Generated Signature:', signature);
+  console.log('==============================');
+
+  return signature;
 };
 
 /**
