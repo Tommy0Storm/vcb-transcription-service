@@ -97,9 +97,9 @@ const rawBasePath = import.meta.env.BASE_URL || '/';
 const normalizedBasePath = rawBasePath.endsWith('/') ? rawBasePath : `${rawBasePath}/`;
 
 export const PAYFAST_CONFIG = {
-  merchantId: '10000100',
-  merchantKey: '46f0cd694581a',
-  passphrase: 'jt7NOE43FZPn',
+  merchantId: '10043379',
+  merchantKey: 'cv55nate9wgnf',
+  passphrase: 'I-love-payfast',
   returnUrl: 'https://vcb-trans.vercel.app/payment-success.html',
   cancelUrl: 'https://vcb-trans.vercel.app/payment-cancelled.html',
   notifyUrl: 'https://vcb-trans.vercel.app/api/payfast/notify',
@@ -1171,44 +1171,28 @@ export const getSetting = async (key) => {
  * CRITICAL: Values must NOT be URL encoded for signature generation
  */
 const generatePayFastSignature = (data) => {
-  // Create parameter string - values must be plain text (NO URL encoding)
   const params = [];
-  const sortedKeys = Object.keys(data).sort();
-
-  console.log('PayFast signature generation - All keys:', sortedKeys);
+  
+  // PayFast requires alphabetical order, excluding signature and passphrase from params
+  const sortedKeys = Object.keys(data).filter(k => k !== 'signature' && k !== 'passphrase').sort();
 
   for (const key of sortedKeys) {
     const value = data[key];
-
-    // Skip only signature and passphrase
-    if (key === 'signature' || key === 'passphrase') continue;
-
-    // Skip empty, null, or undefined values
-    if (value === '' || value === null || value === undefined) {
-      console.log(`Skipping ${key}: empty/null/undefined`);
-      continue;
-    }
-
-    // Use raw value without any encoding
-    const rawValue = String(value).trim();
-    params.push(`${key}=${rawValue}`);
+    // Skip empty values
+    if (value === '' || value === null || value === undefined) continue;
+    params.push(`${key}=${encodeURIComponent(String(value).trim())}`);
   }
 
-  // Join all parameters
   let paramString = params.join('&');
-
-  // Add passphrase at the end if present
+  
+  // Append passphrase at end if present
   if (data.passphrase) {
-    paramString += `&passphrase=${String(data.passphrase).trim()}`;
+    paramString += `&passphrase=${encodeURIComponent(String(data.passphrase).trim())}`;
   }
 
-  // Log for debugging (split by & to show each param clearly)
-  console.log('PayFast Signature String (raw, unencoded):');
-  paramString.split('&').forEach(param => console.log('  ' + param));
-
-  // Generate MD5 hash
+  console.log('PayFast signature string:', paramString);
   const signature = CryptoJS.MD5(paramString).toString();
-  console.log('PayFast Signature (MD5):', signature);
+  console.log('PayFast signature:', signature);
 
   return signature;
 };
