@@ -1170,14 +1170,13 @@ export const getSetting = async (key) => {
  * PayFast requires: MD5(parameter_string)
  * CRITICAL: Values must NOT be URL encoded for signature generation
  */
-const generatePayFastSignature = (data) => {
+const generatePayFastSignature = (data, fieldOrder) => {
   let pfOutput = '';
   
-  for (let key in data) {
-    if (data.hasOwnProperty(key) && key !== 'signature' && key !== 'passphrase') {
-      if (data[key] !== '' && data[key] !== null && data[key] !== undefined) {
-        pfOutput += `${key}=${encodeURIComponent(String(data[key]).trim()).replace(/%20/g, '+')}&`;
-      }
+  // Use provided field order
+  for (const key of fieldOrder) {
+    if (data[key] !== '' && data[key] !== null && data[key] !== undefined) {
+      pfOutput += `${key}=${encodeURIComponent(String(data[key]).trim()).replace(/%20/g, '+')}&`;
     }
   }
 
@@ -1236,10 +1235,13 @@ export const initiateTokenPurchase = (packageId, userId = 'guest', userEmail = '
   paymentData.custom_str3 = userEmail;
   paymentData.passphrase = PAYFAST_CONFIG.passphrase;
 
-  console.log('Initiating PayFast payment:', { packageId, userId, userEmail, amount: paymentData.amount });
-  console.log('PayFast payment data keys:', Object.keys(paymentData).sort());
+  const fieldOrder = ['merchant_id', 'merchant_key', 'amount', 'item_name', 'item_description', 
+    'return_url', 'cancel_url', 'notify_url', 'email_address', 'm_payment_id', 
+    'custom_int1', 'custom_str1', 'custom_str2', 'custom_str3'];
 
-  const signature = generatePayFastSignature(paymentData);
+  console.log('Initiating PayFast payment:', { packageId, userId, userEmail, amount: paymentData.amount });
+
+  const signature = generatePayFastSignature(paymentData, fieldOrder);
   delete paymentData.passphrase;
   paymentData.signature = signature;
 
