@@ -10,9 +10,9 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Supabase configuration from guides/supabase.md
-const SUPABASE_URL = 'https://kzjjkorirrrcqlhcdyqg.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt6amprb3JpcnJyY3FsaGNkeXFnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxMTU1NzAsImV4cCI6MjA3NzY5MTU3MH0.u1A7I6bEOo6bEqROpF0EXJt9U0VbXkEUsqi4Gja3K-4';
+// Supabase configuration from environment variables
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://kzjjkorirrrcqlhcdyqg.supabase.co';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt6amprb3JpcnJyY3FsaGNkeXFnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxMTU1NzAsImV4cCI6MjA3NzY5MTU3MH0.u1A7I6bEOo6bEqROpF0EXJt9U0VbXkEUsqi4Gja3K-4';
 
 // Initialize Supabase client
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);

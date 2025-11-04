@@ -2684,13 +2684,29 @@ const VCBTranscriptionService = () => {
             if (templateType === 'HIGH_COURT' && hasTranslation) {
                 const translationText = segmentsToFormattedText(result.translations[result.displayLanguage]);
                 docxDocument = generateHighCourtBilingualDocument(transcriptText, translationText, {
-                    caseNumber: '[Case Number Placeholder]',
+                    caseNumber: result.caseNumber || '[To be completed]',
+                    caseName: result.caseName || '[To be completed]',
+                    division: result.division || '[To be completed]',
+                    hearingDate: result.hearingDate || new Date(result.timestamp || Date.now()).toISOString().split('T')[0],
+                    judge: result.judge || '[To be completed]',
+                    proceedingType: result.proceedingType || 'Hearing',
+                    duration: formatDurationFromSeconds(result.duration || 0),
                     fileName: result.filename || file.name,
                     sourceLanguage: 'English',
-                    targetLanguage: result.displayLanguage
+                    targetLanguage: result.displayLanguage,
+                    status: 'DRAFT'
                 });
             } else if (templateType === 'HIGH_COURT') {
-                docxDocument = generateHighCourtDocument(transcriptText, { caseNumber: '[Case Number Placeholder]', fileName: result.filename || file.name });
+                docxDocument = generateHighCourtDocument(transcriptText, {
+                    caseNumber: result.caseNumber || '[To be completed]',
+                    caseName: result.caseName || '[To be completed]',
+                    division: result.division || '[To be completed]',
+                    hearingDate: result.hearingDate || new Date(result.timestamp || Date.now()).toISOString().split('T')[0],
+                    judge: result.judge || '[To be completed]',
+                    proceedingType: result.proceedingType || 'Hearing',
+                    duration: formatDurationFromSeconds(result.duration || 0),
+                    status: 'DRAFT'
+                });
             } else if (templateType === 'BILINGUAL' && hasTranslation) {
                 const translationText = segmentsToFormattedText(result.translations[result.displayLanguage]);
                 docxDocument = generateBilingualDocument(transcriptText, translationText, {

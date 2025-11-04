@@ -17,7 +17,8 @@
       "Bash(findstr:*)",
       "Bash(taskkill /F /PID 66600)",
       "Bash(taskkill /F /PID 36920)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(npm run build:*)"
     ],
     "deny": [],
     "ask": []
