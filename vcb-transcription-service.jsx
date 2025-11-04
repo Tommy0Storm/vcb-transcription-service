@@ -2878,7 +2878,7 @@ const VCBTranscriptionService = () => {
                     >
                         ← Back to Transcription
                     </button>
-                    <TokenPurchasePage />
+                    <TokenPurchasePage currentUser={currentUser} />
                 </div>
                 <LocalAIAssistant />
             </React.Fragment>

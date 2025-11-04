@@ -827,26 +827,8 @@ export const POPIAWarningModal = ({ onAccept, currentUser }) => {
 // 7. TOKEN PURCHASE PAGE
 // ============================================================================
 
-export const TokenPurchasePage = () => {
-  const [currentUser, setCurrentUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+export const TokenPurchasePage = ({ currentUser }) => {
   const [confirmPackage, setConfirmPackage] = useState(null);
-
-  useEffect(() => {
-    loadCurrentUser();
-  }, []);
-
-  const loadCurrentUser = async () => {
-    setLoading(true);
-    try {
-      const user = await getCurrentUser();
-      setCurrentUser(user);
-    } catch (error) {
-      console.error('Failed to load user:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handlePurchaseClick = (pkg) => {
     setConfirmPackage(pkg);
@@ -876,7 +858,7 @@ export const TokenPurchasePage = () => {
         Purchase tokens to use for transcription, translation, and voice synthesis services.
       </p>
 
-      {!loading && !currentUser && (
+      {!currentUser && (
         <div style={{
           padding: '16px',
           marginBottom: '24px',
@@ -920,9 +902,8 @@ export const TokenPurchasePage = () => {
               onClick={() => handlePurchaseClick(pkg)}
               className="button button-primary"
               style={{ width: '100%', padding: '12px', backgroundColor: '#000000', color: '#FFFFFF' }}
-              disabled={loading}
             >
-              {loading ? 'Loading...' : 'Purchase'}
+              Purchase
             </button>
           </div>
         ))}
