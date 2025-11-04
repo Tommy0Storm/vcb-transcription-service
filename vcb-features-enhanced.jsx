@@ -1267,9 +1267,7 @@ export const initiateTokenPurchase = (packageId, userId = 'guest', userEmail = '
   // Create and submit form
   const form = document.createElement('form');
   form.method = 'POST';
-  form.action = PAYFAST_CONFIG.sandbox ?
-    'https://sandbox.payfast.co.za/eng/process' :
-    'https://www.payfast.co.za/eng/process';
+  form.action = 'https://sandbox.payfast.co.za/eng/process';
 
   for (const [key, value] of Object.entries(paymentData)) {
     if (key !== 'passphrase') {
