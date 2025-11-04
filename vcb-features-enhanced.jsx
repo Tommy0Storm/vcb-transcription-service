@@ -1218,26 +1218,22 @@ export const initiateTokenPurchase = (packageId, userId = 'guest', userEmail = '
   };
   localStorage.setItem('vcb_payment_intent', JSON.stringify(purchaseIntent));
 
-  const paymentData = {
-    merchant_id: PAYFAST_CONFIG.merchantId,
-    merchant_key: PAYFAST_CONFIG.merchantKey,
-    return_url: PAYFAST_CONFIG.returnUrl,
-    cancel_url: PAYFAST_CONFIG.cancelUrl,
-    notify_url: PAYFAST_CONFIG.notifyUrl,
-    item_name: `VCB Tokens - ${tokenPackage.label}`,
-    item_description: `${tokenPackage.tokens} transcription tokens`,
-    amount: tokenPackage.price.toFixed(2),
-    m_payment_id: `VCB-${Date.now()}`,
-    custom_int1: tokenPackage.tokens,
-    custom_str1: tokenPackage.id,
-    custom_str2: userId,
-    custom_str3: userEmail,
-    passphrase: PAYFAST_CONFIG.passphrase
-  };
-  
-  if (userEmail) {
-    paymentData.email_address = userEmail;
-  }
+  const paymentData = {};
+  paymentData.merchant_id = PAYFAST_CONFIG.merchantId;
+  paymentData.merchant_key = PAYFAST_CONFIG.merchantKey;
+  paymentData.return_url = PAYFAST_CONFIG.returnUrl;
+  paymentData.cancel_url = PAYFAST_CONFIG.cancelUrl;
+  paymentData.notify_url = PAYFAST_CONFIG.notifyUrl;
+  if (userEmail) paymentData.email_address = userEmail;
+  paymentData.m_payment_id = `VCB-${Date.now()}`;
+  paymentData.amount = tokenPackage.price.toFixed(2);
+  paymentData.item_name = `VCB Tokens - ${tokenPackage.label}`;
+  paymentData.item_description = `${tokenPackage.tokens} transcription tokens`;
+  paymentData.custom_str1 = tokenPackage.id;
+  paymentData.custom_str2 = userId;
+  paymentData.custom_str3 = userEmail;
+  paymentData.custom_int1 = tokenPackage.tokens;
+  paymentData.passphrase = PAYFAST_CONFIG.passphrase;
 
   console.log('Initiating PayFast payment:', { packageId, userId, userEmail, amount: paymentData.amount });
   console.log('PayFast payment data keys:', Object.keys(paymentData).sort());
