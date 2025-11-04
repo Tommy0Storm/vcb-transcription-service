@@ -97,13 +97,13 @@ const rawBasePath = import.meta.env.BASE_URL || '/';
 const normalizedBasePath = rawBasePath.endsWith('/') ? rawBasePath : `${rawBasePath}/`;
 
 export const PAYFAST_CONFIG = {
-  merchantId: '31995055',
-  merchantKey: 'g3kamzqwu6dc0',
-  passphrase: 'Viable_Core_Business_007',
+  merchantId: '10000100',
+  merchantKey: '46f0cd694581a',
+  passphrase: 'jt7NOE43FZPn',
   returnUrl: 'https://vcb-trans.vercel.app/payment-success.html',
   cancelUrl: 'https://vcb-trans.vercel.app/payment-cancelled.html',
   notifyUrl: 'https://vcb-trans.vercel.app/api/payfast/notify',
-  sandbox: false  // Using production credentials
+  sandbox: true
 };
 
 // ============================================================================
