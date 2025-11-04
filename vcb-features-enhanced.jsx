@@ -1172,29 +1172,20 @@ export const getSetting = async (key) => {
  */
 const generatePayFastSignature = (data) => {
   const params = [];
-  
-  // PayFast requires alphabetical order, excluding signature and passphrase from params
   const sortedKeys = Object.keys(data).filter(k => k !== 'signature' && k !== 'passphrase').sort();
 
   for (const key of sortedKeys) {
     const value = data[key];
-    // Skip empty values
     if (value === '' || value === null || value === undefined) continue;
-    params.push(`${key}=${encodeURIComponent(String(value).trim())}`);
+    params.push(`${key}=${String(value).trim()}`);
   }
 
   let paramString = params.join('&');
-  
-  // Append passphrase at end if present
   if (data.passphrase) {
-    paramString += `&passphrase=${encodeURIComponent(String(data.passphrase).trim())}`;
+    paramString += `&passphrase=${String(data.passphrase).trim()}`;
   }
 
-  console.log('PayFast signature string:', paramString);
-  const signature = CryptoJS.MD5(paramString).toString();
-  console.log('PayFast signature:', signature);
-
-  return signature;
+  return CryptoJS.MD5(paramString).toString();
 };
 
 /**
