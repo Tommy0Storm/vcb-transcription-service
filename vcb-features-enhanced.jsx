@@ -1180,8 +1180,8 @@ const generatePayFastSignature = (data) => {
   for (const key of sortedKeys) {
     const value = data[key];
 
-    // Skip signature and passphrase
-    if (key === 'signature' || key === 'passphrase') continue;
+    // Skip signature, passphrase, and merchant_key (merchant_key must NOT be in signature)
+    if (key === 'signature' || key === 'passphrase' || key === 'merchant_key') continue;
 
     // Skip empty, null, or undefined values
     if (value === '' || value === null || value === undefined) {
