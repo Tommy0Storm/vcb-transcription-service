@@ -102,7 +102,8 @@ export const PAYFAST_CONFIG = {
   passphrase: 'Viable_Core_Business_007',
   returnUrl: 'https://vcb-trans.vercel.app/payment-success.html',
   cancelUrl: 'https://vcb-trans.vercel.app/payment-cancelled.html',
-  sandbox: false
+  notifyUrl: 'https://vcb-trans.vercel.app/api/payfast/notify',
+  sandbox: false  // Using production credentials
 };
 
 // ============================================================================
@@ -1167,27 +1168,43 @@ export const getSetting = async (key) => {
 /**
  * Generate PayFast signature using MD5 hash
  * PayFast requires: MD5(parameter_string)
+ * CRITICAL: Values must NOT be URL encoded for signature generation
  */
 const generatePayFastSignature = (data) => {
-  // Create parameter string
-  let paramString = '';
+  // Create parameter string - values must be plain text (NO URL encoding)
+  const params = [];
   const sortedKeys = Object.keys(data).sort();
 
+  console.log('PayFast signature generation - All keys:', sortedKeys);
+
   for (const key of sortedKeys) {
-    if (key !== 'signature' && key !== 'passphrase') {
-      // PayFast requires URL encoding for the values
-      paramString += `${key}=${encodeURIComponent(data[key].toString().trim()).replace(/%20/g, '+')}&`;
+    const value = data[key];
+
+    // Skip signature and passphrase
+    if (key === 'signature' || key === 'passphrase') continue;
+
+    // Skip empty, null, or undefined values
+    if (value === '' || value === null || value === undefined) {
+      console.log(`Skipping ${key}: empty/null/undefined`);
+      continue;
     }
-  }
-  // Remove trailing &
-  paramString = paramString.slice(0, -1);
 
-  // Add passphrase if present
+    // Use raw value without any encoding
+    const rawValue = String(value).trim();
+    params.push(`${key}=${rawValue}`);
+  }
+
+  // Join all parameters
+  let paramString = params.join('&');
+
+  // Add passphrase at the end if present
   if (data.passphrase) {
-    paramString += `&passphrase=${encodeURIComponent(data.passphrase.trim())}`;
+    paramString += `&passphrase=${String(data.passphrase).trim()}`;
   }
 
-  console.log('PayFast Signature String:', paramString);
+  // Log for debugging (split by & to show each param clearly)
+  console.log('PayFast Signature String (raw, unencoded):');
+  paramString.split('&').forEach(param => console.log('  ' + param));
 
   // Generate MD5 hash
   const signature = CryptoJS.MD5(paramString).toString();
@@ -1224,6 +1241,7 @@ export const initiateTokenPurchase = (packageId, userId = 'guest', userEmail = '
     merchant_key: PAYFAST_CONFIG.merchantKey,
     return_url: PAYFAST_CONFIG.returnUrl,
     cancel_url: PAYFAST_CONFIG.cancelUrl,
+    notify_url: PAYFAST_CONFIG.notifyUrl,
     item_name: `VCB Tokens - ${tokenPackage.label}`,
     item_description: `${tokenPackage.tokens} transcription tokens`,
     amount: tokenPackage.price.toFixed(2),
@@ -1232,11 +1250,15 @@ export const initiateTokenPurchase = (packageId, userId = 'guest', userEmail = '
     custom_str1: tokenPackage.id,
     custom_str2: userId,
     custom_str3: userEmail,
-    email_address: userEmail || '',
     passphrase: PAYFAST_CONFIG.passphrase
   };
+  
+  if (userEmail) {
+    paymentData.email_address = userEmail;
+  }
 
   console.log('Initiating PayFast payment:', { packageId, userId, userEmail, amount: paymentData.amount });
+  console.log('PayFast payment data keys:', Object.keys(paymentData).sort());
 
   const signature = generatePayFastSignature(paymentData);
   delete paymentData.passphrase;
