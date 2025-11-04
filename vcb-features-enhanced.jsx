@@ -102,7 +102,7 @@ export const PAYFAST_CONFIG = {
   passphrase: 'I-love-payfast',
   returnUrl: 'https://vcb-trans.vercel.app/payment-success.html',
   cancelUrl: 'https://vcb-trans.vercel.app/payment-cancelled.html',
-  notifyUrl: 'https://vcb-trans.vercel.app/api/payfast/notify',
+  notifyUrl: 'https://vcb-trans.vercel.app/api/payfast-notify',
   sandbox: true
 };
 
