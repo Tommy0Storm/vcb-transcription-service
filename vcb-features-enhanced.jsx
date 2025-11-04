@@ -98,7 +98,7 @@ const normalizedBasePath = rawBasePath.endsWith('/') ? rawBasePath : `${rawBaseP
 
 export const PAYFAST_CONFIG = {
   merchantId: '31995055',
-  merchantKey: 'g3kamzqwU6dc0',
+  merchantKey: 'g3kamzqwu6dc0',
   passphrase: 'Viable_Core_Business_007',
   returnUrl: 'https://vcb-trans.vercel.app/payment-success.html',
   cancelUrl: 'https://vcb-trans.vercel.app/payment-cancelled.html',
