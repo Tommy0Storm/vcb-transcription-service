@@ -31,7 +31,7 @@ const LocalAIAssistant = () => {
       setHasGreeted(true);
       setMessages([{
         role: 'assistant',
-        content: '👋 Hi there! I\'m your VCB AI Assistant. I can help you with:\n\n• Transcription questions\n• Translation services\n• Token packages\n• Technical support\n\nWhat can I help you with today?'
+        content: '👋 Hi there! I\'m your VCB AI Assistant. I can help you with:\n\n• 📝 Transcription questions\n• 🌍 Translation services\n• 💰 Token packages\n• 🔧 Technical support\n• 📊 Job quotations & estimates\n• 🛒 Component pricing (with online search)\n\nWhat can I help you with today?'
       }]);
       setShowBadge(false);
     }
@@ -86,7 +86,28 @@ const LocalAIAssistant = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`
         },
-        body: JSON.stringify({ message: userInput })
+        body: JSON.stringify({
+          message: userInput,
+          systemPrompt: `You are a helpful VCB AI Assistant that can:
+1. Answer questions about transcription and translation services
+2. Help with token packages and pricing
+3. Create professional job quotations with:
+   - Web search for component/material prices
+   - 30% markup on all materials
+   - Hourly labor rate estimates
+   - R300 daily travel cost
+4. Provide technical support
+
+When asked to create a quote:
+- Search online for current prices of components/materials
+- List each item with base price
+- Apply 30% markup to materials
+- Add estimated hours × hourly rate
+- Add R300 travel cost (once per day)
+- Format as professional quotation
+
+Always be helpful, professional, and accurate.`
+        })
       });
 
       if (!response.ok) {
@@ -94,7 +115,7 @@ const LocalAIAssistant = () => {
       }
 
       const data = await response.json();
-      
+
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: data.message
