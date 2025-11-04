@@ -8,6 +8,45 @@ const LocalAIAssistant = () => {
   const [loading, setLoading] = useState(false);
   const [session, setSession] = useState(null);
   const [isOpen, setIsOpen] = useState(false);
+  const [hasGreeted, setHasGreeted] = useState(false);
+  const [showBadge, setShowBadge] = useState(true);
+
+  // Auto-open after 3 seconds and show welcome message
+  useEffect(() => {
+    const hasVisited = localStorage.getItem('vcb_ai_assistant_visited');
+
+    if (!hasVisited) {
+      const timer = setTimeout(() => {
+        setIsOpen(true);
+        localStorage.setItem('vcb_ai_assistant_visited', 'true');
+      }, 3000);
+
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  // Show welcome message when opened
+  useEffect(() => {
+    if (isOpen && session && !hasGreeted && messages.length === 0) {
+      setHasGreeted(true);
+      setMessages([{
+        role: 'assistant',
+        content: '👋 Hi there! I\'m your VCB AI Assistant. I can help you with:\n\n• Transcription questions\n• Translation services\n• Token packages\n• Technical support\n\nWhat can I help you with today?'
+      }]);
+      setShowBadge(false);
+    }
+  }, [isOpen, session, hasGreeted, messages.length]);
+
+  // Periodic "nudge" if assistant is closed
+  useEffect(() => {
+    if (!isOpen && session) {
+      const nudgeTimer = setInterval(() => {
+        setShowBadge(true);
+      }, 60000); // Show badge every minute
+
+      return () => clearInterval(nudgeTimer);
+    }
+  }, [isOpen, session]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -19,6 +58,7 @@ const LocalAIAssistant = () => {
       if (!session) {
         setMessages([]);
         setIsOpen(false);
+        setHasGreeted(false);
       }
     });
 
@@ -71,14 +111,49 @@ const LocalAIAssistant = () => {
     }
   };
 
+  const [isListening, setIsListening] = useState(false);
+
+  const startVoiceInput = () => {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      alert('Voice input is not supported in your browser. Please use Chrome, Edge, or Safari.');
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => setIsListening(true);
+    recognition.onend = () => setIsListening(false);
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setInput(transcript);
+      setIsListening(false);
+    };
+
+    recognition.onerror = (event) => {
+      console.error('Speech recognition error:', event.error);
+      setIsListening(false);
+    };
+
+    recognition.start();
+  };
+
   if (!isOpen) {
     return (
       <button
         type="button"
-        className="q-assistant-launcher"
-        onClick={() => setIsOpen(true)}
+        className={`q-assistant-launcher ${showBadge ? 'q-assistant-pulse' : ''}`}
+        onClick={() => {
+          setIsOpen(true);
+          setShowBadge(false);
+        }}
       >
-        <span style={{ fontWeight: 600 }}>VCB AI Assistant</span>
+        {showBadge && <span className="q-assistant-badge">1</span>}
+        <span style={{ fontWeight: 600 }}>💬 VCB AI Assistant</span>
       </button>
     );
   }
@@ -137,9 +212,18 @@ const LocalAIAssistant = () => {
               sendMessage();
             }
           }}
-          placeholder="Ask about transcription services..."
-          disabled={loading}
+          placeholder={isListening ? "🎤 Listening..." : "Ask about transcription services..."}
+          disabled={loading || isListening}
         />
+        <button
+          type="button"
+          onClick={startVoiceInput}
+          disabled={loading || isListening}
+          className={`q-assistant-mic-button ${isListening ? 'listening' : ''}`}
+          title="Voice input"
+        >
+          🎤
+        </button>
         <button onClick={sendMessage} disabled={loading || !input.trim()}>
           Send
         </button>
