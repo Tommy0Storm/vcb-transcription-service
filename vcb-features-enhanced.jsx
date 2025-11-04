@@ -1171,21 +1171,23 @@ export const getSetting = async (key) => {
  * CRITICAL: Values must NOT be URL encoded for signature generation
  */
 const generatePayFastSignature = (data) => {
-  const params = [];
-  const sortedKeys = Object.keys(data).filter(k => k !== 'signature' && k !== 'passphrase').sort();
-
-  for (const key of sortedKeys) {
-    const value = data[key];
-    if (value === '' || value === null || value === undefined) continue;
-    params.push(`${key}=${String(value).trim()}`);
+  let pfOutput = '';
+  
+  // Use original order, NOT alphabetical
+  for (let key in data) {
+    if (data.hasOwnProperty(key) && key !== 'signature' && key !== 'passphrase') {
+      if (data[key] !== '' && data[key] !== null && data[key] !== undefined) {
+        pfOutput += `${key}=${encodeURIComponent(String(data[key]).trim()).replace(/%20/g, '+')}&`;
+      }
+    }
   }
 
-  let paramString = params.join('&');
+  let getString = pfOutput.slice(0, -1);
   if (data.passphrase) {
-    paramString += `&passphrase=${String(data.passphrase).trim()}`;
+    getString += `&passphrase=${encodeURIComponent(String(data.passphrase).trim()).replace(/%20/g, '+')}`;
   }
 
-  return CryptoJS.MD5(paramString).toString();
+  return CryptoJS.MD5(getString).toString();
 };
 
 /**
