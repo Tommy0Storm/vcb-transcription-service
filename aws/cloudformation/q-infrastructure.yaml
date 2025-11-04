@@ -1,0 +1,198 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Amazon Q Business Infrastructure for VCB-Trans'
+
+Parameters:
+  CorsOrigin:
+    Type: CommaDelimitedList
+    Default: 'http://localhost:3001'
+    Description: 'Comma-separated list of allowed origins (no spaces). Example: http://localhost:3001,https://app.example.com'
+  SupabaseJwksUrl:
+    Type: String
+    Default: 'https://kzjjkorirrrcqlhcdyqg.supabase.co/auth/v1/.well-known/jwks.json'
+    Description: Supabase JWKS endpoint for JWT verification
+
+Resources:
+  QProxyLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: vcb-q-proxy-lambda-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: QBusinessAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - qbusiness:Chat
+                  - qbusiness:ListMessages
+                  - qbusiness:StartConversation
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: 
+                  - !Ref QSecretsManager
+                  - !Ref GeminiSecretsManager
+
+  QSecretsManager:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: vcb-q-business-config
+      Description: Amazon Q Business configuration
+      SecretString: !Sub |
+        {
+          "applicationId": "REPLACE_WITH_Q_APP_ID",
+          "encryptionKeyAlias": "REPLACE_WITH_KMS_ALIAS"
+        }
+
+  GeminiSecretsManager:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: vcb-gemini-config
+      Description: Gemini API configuration
+      SecretString: !Sub |
+        {
+          "apiKey": "REPLACE_WITH_GEMINI_API_KEY"
+        }
+
+  QProxyLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: vcb-q-proxy
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt QProxyLambdaRole.Arn
+      Timeout: 30
+      Environment:
+        Variables:
+          Q_APPLICATION_ID: '{{resolve:secretsmanager:vcb-q-business-config:SecretString:applicationId}}'
+          CORS_ORIGIN: !Join [ ',', !Ref CorsOrigin ]
+          SUPABASE_JWKS_URL: !Ref SupabaseJwksUrl
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+            return {
+              statusCode: 200,
+              body: JSON.stringify({ message: 'Deploy actual code' })
+            };
+          };
+
+  QApiGateway:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: vcb-q-business-api
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins: !Ref CorsOrigin
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+        AllowMethods:
+          - POST
+          - OPTIONS
+
+  QApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref QApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${QProxyLambda.Arn}/invocations'
+      PayloadFormatVersion: '2.0'
+
+  QApiRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref QApiGateway
+      RouteKey: 'POST /q/chat'
+      Target: !Sub 'integrations/${QApiIntegration}'
+
+  QOptionsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref QApiGateway
+      RouteKey: 'OPTIONS /q/chat'
+      Target: !Sub 'integrations/${QApiIntegration}'
+
+  QApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref QApiGateway
+      StageName: prod
+      AutoDeploy: true
+
+  QApiLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref QProxyLambda
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${QApiGateway}/*/*'
+
+  GeminiProxyLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: vcb-gemini-proxy
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt QProxyLambdaRole.Arn
+      Timeout: 30
+      Environment:
+        Variables:
+          CORS_ORIGIN: !Join [ ',', !Ref CorsOrigin ]
+          SUPABASE_JWKS_URL: !Ref SupabaseJwksUrl
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+            return {
+              statusCode: 200,
+              body: JSON.stringify({ message: 'Deploy actual code' })
+            };
+          };
+
+  GeminiApiRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref QApiGateway
+      RouteKey: 'POST /assistant/chat'
+      Target: !Sub 'integrations/${GeminiApiIntegration}'
+
+  GeminiOptionsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref QApiGateway
+      RouteKey: 'OPTIONS /assistant/chat'
+      Target: !Sub 'integrations/${GeminiApiIntegration}'
+
+  GeminiApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref QApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GeminiProxyLambda.Arn}/invocations'
+      PayloadFormatVersion: '2.0'
+
+  GeminiApiLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GeminiProxyLambda
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${QApiGateway}/*/*'
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${QApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod'
+  
+  GeminiProxyEndpoint:
+    Description: Gemini proxy endpoint URL
+    Value: !Sub 'https://${QApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod'

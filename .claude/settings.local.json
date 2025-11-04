@@ -4,7 +4,20 @@
       "Bash(npm run dev:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push)"
+      "Bash(git push)",
+      "Bash(cat:*)",
+      "Bash(rm:*)",
+      "Bash(explorer.exe \"c:\\Users\\tommy\\OneDrive\\Dev-Projects\\VCB-Trans\\add-tokens.html\")",
+      "Bash(cmd.exe /c start \"\" \"c:\\Users\\tommy\\OneDrive\\Dev-Projects\\VCB-Trans\\add-tokens.html\")",
+      "Bash(explorer.exe \"http://localhost:3001/load-tokens.html\")",
+      "Bash(cmd.exe /c start \"\" \"http://localhost:3001/load-tokens.html\")",
+      "Bash(npm install:*)",
+      "Bash(cmd.exe /c start \"\" \"http://localhost:3001/vcb-transcription-service/\")",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill /F /PID 66600)",
+      "Bash(taskkill /F /PID 36920)",
+      "Bash(taskkill:*)"
     ],
     "deny": [],
     "ask": []

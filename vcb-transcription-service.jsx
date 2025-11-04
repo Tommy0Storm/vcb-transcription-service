@@ -1,9 +1,65 @@
-
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import SplashScreen from './SplashScreen';
 import { GoogleGenAI, Type } from "@google/genai";
 import JSZip from 'jszip';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, PageNumber, Header as DocxHeader, Footer, Table, TableRow, TableCell, WidthType, VerticalAlign, PageBreak, BorderStyle } from 'docx';
+
+// ========== SUPABASE INTEGRATION ==========
+import {
+  supabase,
+  signUp,
+  signIn,
+  signOut,
+  getCurrentUser,
+  getTokenBalanceFromSupabase,
+  updateTokenBalanceInSupabase,
+  recordTokenTransaction,
+  onAuthStateChange,
+  logTranscriptionStart,
+  logTranscriptionComplete,
+  logTranscriptionFailed,
+  logDownloadStart,
+  logDownloadComplete,
+  logDownloadFailed
+} from './supabase-client';
+// ========== END SUPABASE ==========
+
+// ========== ENHANCED FEATURES - IMPORTS ==========
+import {
+    LANGUAGES,
+    translateTranscript,
+    generateBilingualDocument,
+    getTokenBalance,
+    addTokens,
+    calculateServiceCost,
+    deductTokens,
+    saveTranscription,
+    getTranscriptionHistory,
+    deleteTranscription,
+    autoDeleteOldTranscriptions,
+    initializeDatabase,
+    saveSetting,
+    getSetting,
+    downloadBlob,
+    generateHighCourtDocument,
+    generateHighCourtBilingualDocument,
+    generateProfessionalDocument,
+    getAudioDuration
+} from './vcb-features-enhanced';
+
+import {
+  TranslationSelector,
+  VoiceSynthesisOptions,
+  TokenBalanceWidget,
+  CostEstimator,
+  HistoryDashboard,
+  POPIAWarningModal,
+  TokenPurchasePage,
+    SettingsPanel,
+    AuthenticationWidget
+} from './vcb-components-enhanced';
+import LocalAIAssistant from './local-ai-assistant';
+// ========== END ENHANCED FEATURES ==========
 
 // --- HELPERS & CONSTANTS ---
 
@@ -44,6 +100,76 @@ const generateWaveformData = async (file) => {
         console.error("Error generating waveform:", e);
         return [];
     }
+};
+
+const formatDurationFromSeconds = (seconds) => {
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+        return '00:00:00';
+    }
+    const totalSeconds = Math.floor(seconds);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+};
+
+const normaliseTranscriptTimestamp = (timestamp, fallbackSeconds = 0) => {
+    if (!timestamp) {
+        return formatDurationFromSeconds(fallbackSeconds);
+    }
+
+    const lineMatch = String(timestamp).match(/\[Line\s+(\d+)\]/i);
+    if (lineMatch) {
+        const lineNumber = parseInt(lineMatch[1], 10);
+        return formatDurationFromSeconds(Number.isFinite(lineNumber) ? lineNumber : fallbackSeconds);
+    }
+
+    const cleaned = String(timestamp).replace(/[\[\]]/g, '').trim();
+    if (!cleaned) {
+        return formatDurationFromSeconds(fallbackSeconds);
+    }
+
+    const parts = cleaned.split(':').map(part => part.trim());
+    const numericParts = parts.map(part => Number(part));
+
+    if (numericParts.some(Number.isNaN)) {
+        const asNumber = Number(cleaned);
+        return formatDurationFromSeconds(Number.isNaN(asNumber) ? fallbackSeconds : asNumber);
+    }
+
+    let totalSeconds = 0;
+    if (numericParts.length === 3) {
+        totalSeconds = (numericParts[0] * 3600) + (numericParts[1] * 60) + Math.floor(numericParts[2]);
+    } else if (numericParts.length === 2) {
+        totalSeconds = (numericParts[0] * 60) + Math.floor(numericParts[1]);
+    } else if (numericParts.length === 1) {
+        totalSeconds = Math.floor(numericParts[0]);
+    } else {
+        totalSeconds = fallbackSeconds;
+    }
+
+    return formatDurationFromSeconds(totalSeconds);
+};
+
+const decodeHTMLEntities = (text) => {
+    if (!text) return text;
+    const str = String(text);
+    return str.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+};
+
+const segmentsToFormattedText = (segments = []) => {
+    return segments.map((segment, index) => {
+        const timestamp = normaliseTranscriptTimestamp(segment?.timestamp, index * 5);
+        const rawDialogue = (segment?.dialogue || segment?.text || '').toString().trim();
+        const speaker = decodeHTMLEntities((segment?.speaker || 'SPEAKER 1').toString().trim());
+        const dialogue = decodeHTMLEntities(rawDialogue);
+        if (index === 0 && rawDialogue.includes('&#39;')) {
+            console.log('BEFORE DECODE:', rawDialogue);
+            console.log('AFTER DECODE:', dialogue);
+        }
+        return `[${timestamp}]
+**${speaker}**: ${dialogue}`.trim();
+    }).join('\n\n');
 };
 
 const decodePCMAudioData = async (pcmData, audioContext) => {
@@ -99,6 +225,17 @@ const categorizeError = (error) => {
             suggestion: 'The system has made too many requests. Wait 60 seconds and retry.',
             canRetry: true,
             retryAfter: 60000
+        };
+    }
+
+    // Service overload errors (503)
+    if (message.includes('503') || message.includes('overloaded') || message.includes('UNAVAILABLE') || message.includes('service unavailable')) {
+        return {
+            type: 'service_overload',
+            userMessage: 'AI service is temporarily overloaded. The system will automatically retry.',
+            suggestion: 'Google\'s servers are experiencing high demand. The system will retry automatically with exponential backoff. If retries fail, wait a few minutes and try again.',
+            canRetry: true,
+            retryAfter: 5000
         };
     }
 
@@ -319,11 +456,36 @@ const parseAIResponse = (resultText) => {
     const repairStrategies = [
         // Strategy 1: Fix version numbers
         (text) => text.replace(/(":(?:\s)*)(\d+\.\d+\.\d+)/g, '$1"$2"'),
+
         // Strategy 2: Remove trailing commas
         (text) => text.replace(/,(\s*[}\]])/g, '$1'),
+
         // Strategy 3: Remove control characters
         (text) => text.replace(/[\u0000-\u001F\u007F-\u009F]/g, ''),
-        // Strategy 4: Fix incomplete JSON by adding closing brackets
+
+        // Strategy 4: Remove incomplete final entries (truncated objects in arrays)
+        (text) => {
+            // Find last complete object in array
+            const lastCompleteObject = text.lastIndexOf('}');
+            if (lastCompleteObject === -1) return text;
+
+            // Check if there's incomplete data after last }
+            const afterLastBrace = text.substring(lastCompleteObject + 1).trim();
+            if (afterLastBrace && afterLastBrace !== ']' && afterLastBrace !== ',]') {
+                // Remove everything after last complete object, then close array
+                let cleaned = text.substring(0, lastCompleteObject + 1);
+                // Remove trailing comma if present
+                cleaned = cleaned.replace(/,\s*$/, '');
+                // Close the array
+                if (!cleaned.trim().endsWith(']')) {
+                    cleaned += ']';
+                }
+                return cleaned;
+            }
+            return text;
+        },
+
+        // Strategy 5: Fix incomplete JSON by adding closing brackets
         (text) => {
             let openBrackets = (text.match(/{/g) || []).length;
             let closeBrackets = (text.match(/}/g) || []).length;
@@ -333,88 +495,106 @@ const parseAIResponse = (resultText) => {
             for (let i = 0; i < openBrackets - closeBrackets; i++) fixed += '}';
             for (let i = 0; i < openArrays - closeArrays; i++) fixed += ']';
             return fixed;
+        },
+
+        // Strategy 6: Fix truncated strings (unterminated quotes)
+        (text) => {
+            // Count quotes to see if we have unmatched quotes
+            const quotes = (text.match(/"/g) || []).length;
+            if (quotes % 2 !== 0) {
+                // Odd number of quotes means truncated string
+                // Try to close it properly before adding closing brackets
+                return text + '"}]';
+            }
+            return text;
+        },
+
+        // Strategy 7: Fix unescaped quotes in word/text values
+        (text) => {
+            // This is tricky - try to escape quotes that appear within word values
+            // Pattern: "word": "text with " problem"
+            return text.replace(/"(word|text|speaker)":\s*"([^"]*)"([^"]*)"([^"]*?)"/g, (match, key, start, middle, end) => {
+                if (middle && end) {
+                    // Has quotes in the middle - escape them
+                    const escaped = start + '\\"' + middle + '\\"' + end;
+                    return `"${key}": "${escaped}"`;
+                }
+                return match;
+            });
         }
     ];
 
     // Try each strategy individually
     for (const strategy of repairStrategies) {
         try {
-            const cleanText = resultText.replace(/```json|```/g, '').trim();
-            const repairedText = strategy(cleanText);
-            return JSON.parse(repairedText);
-        } catch (error) {
-            continue;
+            const repaired = strategy(resultText.replace(/```json|```/g, '').trim());
+            return JSON.parse(repaired);
+        } catch (e) {
+            // Continue to next strategy
         }
     }
 
-    // Try combining all strategies
+    // Try all strategies combined in sequence
     try {
-        let cleanText = resultText.replace(/```json|```/g, '').trim();
+        let repaired = resultText.replace(/```json|```/g, '').trim();
         for (const strategy of repairStrategies) {
-            cleanText = strategy(cleanText);
+            repaired = strategy(repaired);
         }
-        return JSON.parse(cleanText);
+        return JSON.parse(repaired);
     } catch (error) {
-        throw new Error(`Failed to parse AI response after all repair attempts. Original error: ${error.message}`);
+        // Last resort: try to extract valid JSON array portion
+        try {
+            const arrayMatch = repaired.match(/\[[\s\S]*\]/);
+            if (arrayMatch) {
+                return JSON.parse(arrayMatch[0]);
+            }
+        } catch (e) {
+            // Fallback failed
+        }
+
+        console.error("All JSON repair strategies failed. Raw response:", resultText.substring(0, 500));
+        throw new Error(`All JSON repair strategies failed: ${error.message}`);
     }
 };
 
-// --- CONFIRMATION DIALOG COMPONENT ---
+// --- RETRY HELPER FOR API CALLS ---
+const retryWithBackoff = async (fn, maxRetries = 3, baseDelay = 2000) => {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            return await fn();
+        } catch (error) {
+            const isRetryable =
+                error.message?.includes('503') ||
+                error.message?.includes('overloaded') ||
+                error.message?.includes('UNAVAILABLE') ||
+                error.message?.includes('rate limit') ||
+                error.code === 503;
 
-const ConfirmDialog = ({ message, onConfirm, onCancel }) => {
-    return (
-        <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 10001,
-            animation: 'fadeIn 0.2s ease-out'
-        }}>
-            <div style={{
-                backgroundColor: '#FFFFFF',
-                padding: '32px',
-                borderRadius: '8px',
-                maxWidth: '400px',
-                border: '1px solid #E9ECEF'
-            }}>
-                <h3 style={{
-                    margin: '0 0 16px 0',
-                    fontSize: '18px',
-                    fontWeight: '700',
-                    color: '#212529'
-                }}>Confirm Action</h3>
-                <p style={{
-                    margin: '0 0 24px 0',
-                    fontSize: '14px',
-                    lineHeight: '1.6',
-                    color: '#6C757D'
-                }}>{message}</p>
-                <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-                    <button
-                        onClick={onCancel}
-                        className="button button-secondary"
-                        style={{ padding: '8px 16px' }}
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        onClick={onConfirm}
-                        className="button button-primary"
-                        style={{ padding: '8px 16px', backgroundColor: '#000000' }}
-                    >
-                        Confirm
-                    </button>
-                </div>
+            const isLastAttempt = attempt === maxRetries - 1;
+
+            if (!isRetryable || isLastAttempt) {
+                throw error;
+            }
+
+            const delay = baseDelay * Math.pow(2, attempt);
+            console.warn(`API call failed (attempt ${attempt + 1}/${maxRetries}). Retrying in ${delay}ms...`, error.message);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+};
+
+const ConfirmDialog = ({ title = 'Are you sure?', message, onConfirm, onCancel }) => (
+    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0, 0, 0, 0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
+        <div style={{ backgroundColor: '#FFFFFF', borderRadius: '10px', padding: '24px', maxWidth: '360px', width: '90%', boxShadow: '0 12px 30px rgba(0, 0, 0, 0.18)', border: '1px solid #E0E0E0' }}>
+            <h4 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: 600 }}>{title}</h4>
+            <p style={{ margin: 0, fontSize: '14px', lineHeight: 1.6 }}>{message}</p>
+            <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                <button type="button" onClick={onCancel} className="button button-secondary">Cancel</button>
+                <button type="button" onClick={onConfirm} className="button button-primary" style={{ padding: '8px 16px', backgroundColor: '#000000' }}>Confirm</button>
             </div>
         </div>
-    );
-};
+    </div>
+);
 
 // --- TOAST NOTIFICATION COMPONENT ---
 
@@ -515,15 +695,21 @@ const generateLegalDoc = (result) => {
     const serialNumber = generateSerialNumber();
     const hasTranslation = displayLanguage !== 'Original' && translations[displayLanguage];
 
+    const decodeHTMLEntities = (text) => {
+        const textarea = document.createElement('textarea');
+        textarea.innerHTML = text;
+        return textarea.value;
+    };
+
     const createTranscriptSection = (transcript, title) => {
         let lineNumber = 1;
-        const paragraphs = [new Paragraph({ text: title, heading: HeadingLevel.HEADING_2, alignment: AlignmentType.CENTER })];
+        const paragraphs = [new Paragraph({ text: decodeHTMLEntities(title), heading: HeadingLevel.HEADING_2, alignment: AlignmentType.CENTER })];
         transcript.forEach(item => {
             paragraphs.push(new Paragraph({
                 children: [
                     new TextRun({ text: `${lineNumber++}.\t`, ...commonStyles.body }),
-                    new TextRun({ text: `${item.timestamp} ${item.speaker}:\t`, bold: true, ...commonStyles.body }),
-                    new TextRun({ text: item.dialogue, ...commonStyles.body }),
+                    new TextRun({ text: `${item.timestamp} ${decodeHTMLEntities(item.speaker)}:\t`, bold: true, ...commonStyles.body }),
+                    new TextRun({ text: decodeHTMLEntities(item.dialogue), ...commonStyles.body }),
                 ],
                 spacing: { line: 360 }, // 1.5 spacing
                 alignment: AlignmentType.JUSTIFIED,
@@ -533,54 +719,54 @@ const generateLegalDoc = (result) => {
     };
 
     const sections = [{
-        headers: { default: createStandardHeader(`Case No: [Case Number Placeholder]`) },
+        headers: { default: createStandardHeader(decodeHTMLEntities(`Case No: [Case Number Placeholder]`)) },
         footers: { default: createStandardFooter() },
         children: [
             // Cover Page
-            new Paragraph({ text: "IN THE MAGISTRATE'S COURT FOR THE DISTRICT OF [DISTRICT]", alignment: AlignmentType.CENTER, spacing: { after: 400 } }),
-            new Paragraph({ text: "HELD AT [COURT LOCATION]", alignment: AlignmentType.CENTER, spacing: { after: 800 } }),
-            new Paragraph({ children: [new TextRun({ text: "CASE NO: [Case Number Placeholder]", underline: {} })], alignment: AlignmentType.RIGHT, spacing: { after: 400 } }),
-            new Paragraph({ text: "In the matter between:", spacing: { after: 400 } }),
-            new Paragraph({ text: "[PROSECUTOR/PLAINTIFF NAME]", alignment: AlignmentType.CENTER, spacing: { after: 200 } }),
-            new Paragraph({ text: "and", alignment: AlignmentType.CENTER, spacing: { after: 200 } }),
-            new Paragraph({ text: "[DEFENDANT/ACCUSED NAME]", alignment: AlignmentType.CENTER, spacing: { after: 800 } }),
-            new Paragraph({ text: hasTranslation ? "TRANSCRIPT OF AUDIO RECORDING AND CERTIFIED TRANSLATION" : "TRANSCRIPT OF AUDIO RECORDING", heading: HeadingLevel.HEADING_1, alignment: AlignmentType.CENTER, spacing: { after: 400 } }),
+            new Paragraph({ text: decodeHTMLEntities("IN THE MAGISTRATE'S COURT FOR THE DISTRICT OF [DISTRICT]"), alignment: AlignmentType.CENTER, spacing: { after: 400 } }),
+            new Paragraph({ text: decodeHTMLEntities("HELD AT [COURT LOCATION]"), alignment: AlignmentType.CENTER, spacing: { after: 800 } }),
+            new Paragraph({ children: [new TextRun({ text: decodeHTMLEntities("CASE NO: [Case Number Placeholder]"), underline: {} })], alignment: AlignmentType.RIGHT, spacing: { after: 400 } }),
+            new Paragraph({ text: decodeHTMLEntities("In the matter between:"), spacing: { after: 400 } }),
+            new Paragraph({ text: decodeHTMLEntities("[PROSECUTOR/PLAINTIFF NAME]"), alignment: AlignmentType.CENTER, spacing: { after: 200 } }),
+            new Paragraph({ text: decodeHTMLEntities("and"), alignment: AlignmentType.CENTER, spacing: { after: 200 } }),
+            new Paragraph({ text: decodeHTMLEntities("[DEFENDANT/ACCUSED NAME]"), alignment: AlignmentType.CENTER, spacing: { after: 800 } }),
+            new Paragraph({ text: decodeHTMLEntities(hasTranslation ? "TRANSCRIPT OF AUDIO RECORDING AND CERTIFIED TRANSLATION" : "TRANSCRIPT OF AUDIO RECORDING"), heading: HeadingLevel.HEADING_1, alignment: AlignmentType.CENTER, spacing: { after: 400 } }),
             new Paragraph({ text: `Date of Recording: ${new Date(timestamp).toLocaleDateString()}`, alignment: AlignmentType.CENTER }),
             new Paragraph({ text: `Date of Transcription: ${new Date().toLocaleDateString()}`, alignment: AlignmentType.CENTER }),
             new Paragraph({ text: `Serial Number: ${serialNumber}`, alignment: AlignmentType.CENTER }),
             new Paragraph({ text: "", pageBreakBefore: true }),
             // Speaker Index
-            new Paragraph({ text: "SPEAKER INDEX", heading: HeadingLevel.HEADING_2, alignment: AlignmentType.CENTER, spacing: { after: 400 } }),
+            new Paragraph({ text: decodeHTMLEntities("SPEAKER INDEX"), heading: HeadingLevel.HEADING_2, alignment: AlignmentType.CENTER, spacing: { after: 400 } }),
             new Table({
                 rows: [
-                    new TableRow({ children: [new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "SPEAKER IDENTIFIER", ...commonStyles.tableHeader })] })] })] }),
-                    ...speakerProfiles.map(p => new TableRow({ children: [new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: p.speaker, ...commonStyles.tableContent })] })] })] }))
+                    new TableRow({ children: [new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: decodeHTMLEntities("SPEAKER IDENTIFIER"), ...commonStyles.tableHeader })] })] })] }),
+                    ...speakerProfiles.map(p => new TableRow({ children: [new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: decodeHTMLEntities(p.speaker), ...commonStyles.tableContent })] })] })] }))
                 ],
                 width: { size: 100, type: WidthType.PERCENTAGE },
             }),
             new Paragraph({ text: "", pageBreakBefore: true }),
             // Transcript
-            ...createTranscriptSection(transcription, hasTranslation ? "Original Transcript (English)" : "Transcript"),
+            ...createTranscriptSection(transcription, decodeHTMLEntities(hasTranslation ? "Original Transcript (English)" : "Transcript")),
             // Translation (if exists)
-            ...(hasTranslation ? [new Paragraph({ text: "", pageBreakBefore: true }), ...createTranscriptSection(translations[displayLanguage], `Certified Translation (${displayLanguage})`)] : []),
+            ...(hasTranslation ? [new Paragraph({ text: "", pageBreakBefore: true }), ...createTranscriptSection(translations[displayLanguage], decodeHTMLEntities(`Certified Translation (${displayLanguage})`))] : []),
             // Certificate
             new Paragraph({ text: "", pageBreakBefore: true }),
-            new Paragraph({ text: "CERTIFICATE OF TRANSCRIPTION", heading: HeadingLevel.HEADING_2, alignment: AlignmentType.CENTER, spacing: { after: 800 } }),
+            new Paragraph({ text: decodeHTMLEntities("CERTIFICATE OF TRANSCRIPTION"), heading: HeadingLevel.HEADING_2, alignment: AlignmentType.CENTER, spacing: { after: 800 } }),
             new Paragraph({
-                text: `I, the undersigned, hereby certify that the foregoing is a true and correct transcript of the audio recording provided, processed by the VCB AI Transcription Service on ${new Date().toLocaleString()}. The transcription was generated using the ${modelUsed} model.`,
+                text: decodeHTMLEntities(`I, the undersigned, hereby certify that the foregoing is a true and correct transcript of the audio recording provided, processed by the VCB AI Transcription Service on ${new Date().toLocaleString()}. The transcription was generated using the ${modelUsed} model.`),
                 ...commonStyles.body,
                 alignment: AlignmentType.JUSTIFIED,
                 spacing: { line: 360 }
             }),
             ...(hasTranslation ? [new Paragraph({
-                text: `Furthermore, I certify that the accompanying translation into ${displayLanguage} is, to the best of my knowledge, a faithful and accurate rendering of the original transcript, also generated by the VCB AI system.`,
+                text: decodeHTMLEntities(`Furthermore, I certify that the accompanying translation into ${displayLanguage} is, to the best of my knowledge, a faithful and accurate rendering of the original transcript, also generated by the VCB AI system.`),
                 ...commonStyles.body,
                 alignment: AlignmentType.JUSTIFIED,
                 spacing: { line: 360, before: 400 }
             })] : []),
-             new Paragraph({ text: `Document Serial Number: ${serialNumber}`, alignment: AlignmentType.LEFT, spacing: { before: 800 } }),
-             new Paragraph({ text: "Signature: ___________________________", alignment: AlignmentType.LEFT, spacing: { before: 400 } }),
-             new Paragraph({ text: "VCB AI Transcription Service", alignment: AlignmentType.LEFT }),
+             new Paragraph({ text: decodeHTMLEntities(`Document Serial Number: ${serialNumber}`), alignment: AlignmentType.LEFT, spacing: { before: 800 } }),
+             new Paragraph({ text: decodeHTMLEntities("Signature: ___________________________"), alignment: AlignmentType.LEFT, spacing: { before: 400 } }),
+             new Paragraph({ text: decodeHTMLEntities("VCB AI Transcription Service"), alignment: AlignmentType.LEFT }),
         ]
     }];
     return new Document({ sections, styles: { default: { document: { run: { font: commonStyles.font, size: commonStyles.body.size } } } } });
@@ -589,15 +775,20 @@ const generateLegalDoc = (result) => {
 const generateStandardTranscriptDoc = (result) => {
     const { filename, transcription, displayLanguage, translations } = result;
     const hasTranslation = displayLanguage !== 'Original' && translations[displayLanguage];
+    const decodeHTMLEntities = (text) => {
+        const textarea = document.createElement('textarea');
+        textarea.innerHTML = text;
+        return textarea.value;
+    };
     const createTranscriptSection = (transcript, title) => {
         let lineNumber = 1;
         return [
-            new Paragraph({ text: title, heading: HeadingLevel.HEADING_2, spacing: { before: 400, after: 200 } }),
+            new Paragraph({ text: decodeHTMLEntities(title), heading: HeadingLevel.HEADING_2, spacing: { before: 400, after: 200 } }),
             ...transcript.map(item => new Paragraph({
                 children: [
                     new TextRun({ text: `${lineNumber++}.\t`, ...commonStyles.body }),
-                    new TextRun({ text: `${item.timestamp} ${item.speaker}:\t`, bold: true, ...commonStyles.body }),
-                    new TextRun({ text: item.dialogue, ...commonStyles.body })
+                    new TextRun({ text: `${item.timestamp} ${decodeHTMLEntities(item.speaker)}:\t`, bold: true, ...commonStyles.body }),
+                    new TextRun({ text: decodeHTMLEntities(item.dialogue), ...commonStyles.body })
                 ],
                 spacing: { line: 360 },
                 alignment: AlignmentType.JUSTIFIED,
@@ -977,8 +1168,9 @@ const FileItem = ({ file, onTranscribe, onRemove }) => (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', fontSize: '12px', color: 'var(--color-on-surface-secondary)', marginBottom: 'var(--spacing-2)' }}>
                     {file.status === 'processing' && <SpinnerIcon />}
                     <span>
-                        {file.status === 'uploading' && `Loading file... ${file.progress}%`}
-                        {file.status === 'processing' && `Analyzing with AI... ${file.progress || 0}% (Tier: ${file.processingTier})`}
+                        {file.statusMessage || (file.status === 'uploading' ? `Loading file... ${file.progress}%` : `Analyzing with AI... ${file.progress || 0}% (Tier: ${file.processingTier})`)}
+                        {!file.statusMessage && ` ${file.progress || 0}%`}
+                        {file.statusMessage && file.progress < 100 && ` ${file.progress || 0}%`}
                     </span>
                 </div>
                 <div style={{ height: '6px', backgroundColor: 'var(--color-border)', borderRadius: '3px', overflow: 'hidden' }}>
@@ -1028,7 +1220,14 @@ const DetailedAnalysisCard = ({ analysis, summary, actionItems }) => {
                     <div>
                         <h5 style={{ margin: '0 0 var(--spacing-3)', fontSize: '12px', fontWeight: 600 }}>Keyword Density</h5>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--spacing-2)' }}>
-                            {analysis.keywordDensity.map(kw => <span key={kw} style={{ backgroundColor: 'var(--color-border)', padding: 'var(--spacing-1) var(--spacing-2)', borderRadius: '4px', fontSize: '12px' }}>{kw}</span>)}
+                            {analysis.keywordDensity.map((kw, idx) => (
+                                <span
+                                    key={`${kw.keyword}-${idx}`}
+                                    style={{ backgroundColor: 'var(--color-border)', padding: 'var(--spacing-1) var(--spacing-2)', borderRadius: '4px', fontSize: '12px' }}
+                                >
+                                    {kw.keyword} ({kw.count})
+                                </span>
+                            ))}
                         </div>
                     </div>
                 </div>
@@ -1038,35 +1237,128 @@ const DetailedAnalysisCard = ({ analysis, summary, actionItems }) => {
 };
 
 const ExportPopover = ({ onExport, onCancel, file, showToast }) => {
-    const [options, setOptions] = useState({ transcript: true, waveform: true, analysis: file.processingTier !== 'Legal' });
     const popoverRef = useRef(null);
+    const result = file.result;
+    // Only Enhanced tier has analysis (Standard and Legal do not)
+    const hasAnalysis = result?.processingTier === 'Enhanced' && Boolean(result?.detailedAnalysis || result?.summary || result?.actionItems);
+    const hasWaveform = Boolean(result?.waveformData);
+    const hasTranslation = Object.keys(result?.translations || {}).length > 0;
+
+    const inferredTemplate = result?.processingTier === 'Legal'
+        ? 'HIGH_COURT'
+        : (hasTranslation && result?.displayLanguage !== 'Original' ? 'BILINGUAL' : 'PROFESSIONAL');
+
+    const [templateType, setTemplateType] = useState(inferredTemplate);
+    const [includeAnalysis, setIncludeAnalysis] = useState(hasAnalysis);
+    const [includeWaveform, setIncludeWaveform] = useState(hasWaveform);
+
     useEffect(() => {
-        const handleClickOutside = (event) => { if (popoverRef.current && !popoverRef.current.contains(event.target)) onCancel(); };
+        const handleClickOutside = (event) => {
+            if (popoverRef.current && !popoverRef.current.contains(event.target)) {
+                onCancel();
+            }
+        };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [onCancel]);
-    const handleToggle = (option) => setOptions(prev => ({ ...prev, [option]: !prev[option] }));
-    const handleExportClick = () => {
-        if (!options.transcript && !options.waveform && !options.analysis) {
-            showToast("Please select at least one component to export.", 'warning');
+
+    useEffect(() => {
+        if (!hasTranslation && templateType === 'BILINGUAL') {
+            setTemplateType('PROFESSIONAL');
+        }
+    }, [hasTranslation, templateType]);
+
+    const audioMinutes = result?.duration ? result.duration / 60 : 0;
+    const costPreview = audioMinutes > 0
+        ? calculateServiceCost(audioMinutes, { translation: templateType === 'BILINGUAL' })
+        : null;
+
+    const handleTemplateChange = (value) => {
+        if (value === 'BILINGUAL' && !hasTranslation) {
+            showToast('Generate and select a translation before exporting as bilingual.', 'warning');
             return;
         }
-        onExport(options);
+        setTemplateType(value);
+    };
+
+    const handleExportClick = () => {
+        if (!templateType) {
+            showToast('Select a document template to export.', 'warning');
+            return;
+        }
+
+        onExport({
+            templateType,
+            includeAnalysis: includeAnalysis && hasAnalysis,
+            includeWaveform: includeWaveform && hasWaveform
+        });
     };
 
     return (
-        <div ref={popoverRef} style={{ position: 'absolute', top: '48px', right: 0, backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--border-radius)', boxShadow: 'var(--shadow-lg)', zIndex: 10, padding: 'var(--spacing-4)', width: '240px', display: 'flex', flexDirection: 'column', gap: 'var(--spacing-3)' }}>
-            <div style={{ fontWeight: 700, fontSize: '14px', borderBottom: '1px solid var(--color-border)', paddingBottom: 'var(--spacing-2)', marginBottom: 'var(--spacing-1)' }}>Export Options</div>
-            {Object.entries({ transcript: 'Transcript (.docx)', waveform: 'Waveform (.svg)', analysis: 'Analysis Report (.docx)' }).map(([key, label]) => {
-                if (key === 'analysis' && file.processingTier === 'Legal') return null;
-                return (
-                    <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: 'pointer', fontSize: '14px' }} onClick={() => handleToggle(key)}>
-                        <input type="checkbox" checked={options[key]} readOnly style={{ accentColor: 'var(--color-primary)' }} />
-                        <label>{label}</label>
-                    </div>
-                );
-            })}
-            <button onClick={handleExportClick} className="button button-primary" style={{ marginTop: 'var(--spacing-3)', width: '100%', padding: 'var(--spacing-2)' }}>Download Package</button>
+        <div
+            ref={popoverRef}
+            style={{
+                position: 'absolute',
+                top: '48px',
+                right: 0,
+                backgroundColor: 'var(--color-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: 'var(--border-radius)',
+                boxShadow: 'var(--shadow-lg)',
+                zIndex: 10,
+                padding: 'var(--spacing-4)',
+                width: '280px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--spacing-3)'
+            }}
+        >
+            <div style={{ fontWeight: 700, fontSize: '14px', borderBottom: '1px solid var(--color-border)', paddingBottom: 'var(--spacing-2)' }}>Document Template</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-2)', fontSize: '13px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: 'pointer' }}>
+                    <input type="radio" name={`template-${file.id}`} value="PROFESSIONAL" checked={templateType === 'PROFESSIONAL'} onChange={() => handleTemplateChange('PROFESSIONAL')} />
+                    Professional Transcript
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: hasTranslation ? 'pointer' : 'not-allowed', color: hasTranslation ? 'inherit' : 'var(--color-on-surface-secondary)' }}>
+                    <input type="radio" name={`template-${file.id}`} value="BILINGUAL" checked={templateType === 'BILINGUAL'} onChange={() => handleTemplateChange('BILINGUAL')} disabled={!hasTranslation} />
+                    Bilingual Transcript
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: 'pointer' }}>
+                    <input type="radio" name={`template-${file.id}`} value="HIGH_COURT" checked={templateType === 'HIGH_COURT'} onChange={() => handleTemplateChange('HIGH_COURT')} />
+                    High Court Certified
+                </label>
+            </div>
+            {templateType === 'BILINGUAL' && (
+                <div style={{ fontSize: '12px', color: 'var(--color-on-surface-secondary)' }}>
+                    Using translation: {result?.displayLanguage !== 'Original' ? result.displayLanguage : 'Select language in dropdown before exporting'}
+                </div>
+            )}
+
+            <div style={{ fontWeight: 700, fontSize: '14px', borderBottom: '1px solid var(--color-border)', paddingBottom: 'var(--spacing-2)' }}>Additional Files</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-2)', fontSize: '13px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', color: hasAnalysis ? 'inherit' : 'var(--color-on-surface-secondary)' }}>
+                    <input type="checkbox" checked={includeAnalysis && hasAnalysis} onChange={() => setIncludeAnalysis(prev => !prev)} disabled={!hasAnalysis} />
+                    Analysis Report (.docx)
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', color: hasWaveform ? 'inherit' : 'var(--color-on-surface-secondary)' }}>
+                    <input type="checkbox" checked={includeWaveform && hasWaveform} onChange={() => setIncludeWaveform(prev => !prev)} disabled={!hasWaveform} />
+                    Waveform Visual (.svg)
+                </label>
+            </div>
+
+            {costPreview && (
+                <div style={{ fontSize: '12px', color: 'var(--color-on-surface-secondary)' }}>
+                    Estimated Cost: {costPreview.tokens} tokens (R {costPreview.costInRands})
+                </div>
+            )}
+
+            <button
+                onClick={handleExportClick}
+                className="button button-primary"
+                style={{ marginTop: 'var(--spacing-2)', width: '100%', padding: 'var(--spacing-2)' }}
+            >
+                Generate & Download
+            </button>
         </div>
     );
 };
@@ -1082,7 +1374,7 @@ const AIActionCard = ({ result, onSummarize, onExtractItems, onToggleTidied }) =
     return (
          <div style={{ border: '1px solid var(--color-border)', padding: 'var(--spacing-5)', borderRadius: 'var(--border-radius)' }}>
             <h4 style={{ margin: '0 0 var(--spacing-5) 0', fontSize: '14px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px' }}>VCB AI Actions</h4>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--spacing-4)' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--spacing-4)', alignItems: 'center' }}>
                 <button onClick={onSummarize} className="button button-secondary" disabled={result.isSummarizing}>
                     {result.isSummarizing ? <SpinnerIcon /> : <SummaryIcon />} Generate Summary
                 </button>
@@ -1090,36 +1382,51 @@ const AIActionCard = ({ result, onSummarize, onExtractItems, onToggleTidied }) =
                     {result.isExtracting ? <SpinnerIcon /> : <ActionItemIcon />} Extract Action Items
                 </button>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-3)', padding: '0 var(--spacing-3)', border: '1px solid var(--color-border)', borderRadius: '6px' }}>
-                     <label htmlFor={`tidy-toggle-${result.filename}`} style={{ fontSize: '14px', fontWeight: 500, cursor: 'pointer' }}>Tidied View</label>
-                     <button
-                        id={`tidy-toggle-${result.filename}`}
-                        role="switch"
-                        aria-checked={result.showTidied}
-                        onClick={onToggleTidied}
-                        style={{
-                            position: 'relative',
-                            width: '40px',
-                            height: '22px',
-                            borderRadius: '11px',
-                            backgroundColor: result.showTidied ? 'var(--color-primary)' : 'var(--color-border)',
-                            border: 'none',
-                            cursor: 'pointer',
-                            transition: 'background-color 0.2s',
-                        }}
-                    >
-                        <span style={{
-                            position: 'absolute',
-                            top: '2px',
-                            left: result.showTidied ? '20px' : '2px',
-                            width: '18px',
-                            height: '18px',
-                            borderRadius: '50%',
-                            backgroundColor: 'white',
-                            transition: 'left 0.2s',
-                        }}></span>
-                    </button>
+                     <label htmlFor={`tidy-toggle-${result.filename}`} style={{ fontSize: '14px', fontWeight: 500, cursor: result.isTidying ? 'wait' : 'pointer' }}>
+                        Tidied View
+                     </label>
+                     {result.isTidying ? (
+                        <SpinnerIcon />
+                     ) : (
+                        <button
+                            id={`tidy-toggle-${result.filename}`}
+                            role="switch"
+                            aria-checked={result.showTidied}
+                            onClick={onToggleTidied}
+                            disabled={result.isTidying}
+                            style={{
+                                position: 'relative',
+                                width: '40px',
+                                height: '22px',
+                                borderRadius: '11px',
+                                backgroundColor: result.showTidied ? 'var(--color-primary)' : 'var(--color-border)',
+                                border: 'none',
+                                cursor: 'pointer',
+                                transition: 'background-color 0.2s',
+                            }}
+                        >
+                            <span style={{
+                                position: 'absolute',
+                                top: '2px',
+                                left: result.showTidied ? '20px' : '2px',
+                                width: '18px',
+                                height: '18px',
+                                borderRadius: '50%',
+                                backgroundColor: 'white',
+                                transition: 'left 0.2s',
+                            }}></span>
+                        </button>
+                     )}
                 </div>
             </div>
+            {result.tidiedError && (
+                <div style={{ marginTop: 'var(--spacing-4)', padding: 'var(--spacing-3)', backgroundColor: '#FEE', border: '1px solid #FCC', borderRadius: '6px' }}>
+                    <p style={{ margin: 0, fontSize: '13px', color: '#C00', fontWeight: 500 }}>{result.tidiedError}</p>
+                    {result.tidiedErrorSuggestion && (
+                        <p style={{ margin: 'var(--spacing-2) 0 0', fontSize: '12px', color: '#666' }}>{result.tidiedErrorSuggestion}</p>
+                    )}
+                </div>
+            )}
         </div>
     );
 };
@@ -1297,14 +1604,17 @@ const ResultCard = ({ file, onExport, onTranslate, onUpdateFile, audioContext, o
                             </div>
                         )}
                         <div style={{ maxHeight: '400px', overflowY: 'auto', paddingRight: 'var(--spacing-4)', transition: 'opacity 0.3s ease', opacity: result.isTranslating ? 0.4 : 1 }}>
-                            {transcriptionToDisplay.map((item, index) => (
-                                <div key={index} ref={el => el ? segmentRefs.current.set(index, el) : segmentRefs.current.delete(index)} style={{ marginBottom: 'var(--spacing-4)' }}>
-                                    <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: 'var(--spacing-2)' }}>{item.speaker} <span style={{ color: 'var(--color-on-surface-secondary)', fontWeight: 500 }}>{item.timestamp}</span></div>
-                                    <p className={playbackState.currentSegment === index ? 'highlight-text' : ''} style={{ fontSize: '14px', lineHeight: 1.7, margin: 0, padding: 'var(--spacing-2)', borderRadius: '6px' }}>
-                                        <HighlightedText text={item.dialogue} query={searchQuery} />
-                                    </p>
-                                </div>
-                            ))}
+                            {transcriptionToDisplay.map((item, index) => {
+                                const dialogueText = typeof item.dialogue === 'string' ? item.dialogue : JSON.stringify(item.dialogue);
+                                return (
+                                    <div key={index} ref={el => el ? segmentRefs.current.set(index, el) : segmentRefs.current.delete(index)} style={{ marginBottom: 'var(--spacing-4)' }}>
+                                        <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: 'var(--spacing-2)' }}>{item.speaker} <span style={{ color: 'var(--color-on-surface-secondary)', fontWeight: 500 }}>{item.timestamp}</span></div>
+                                        <p className={playbackState.currentSegment === index ? 'highlight-text' : ''} style={{ fontSize: '14px', lineHeight: 1.7, margin: 0, padding: 'var(--spacing-2)', borderRadius: '6px' }}>
+                                            <HighlightedText text={dialogueText} query={searchQuery} />
+                                        </p>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
@@ -1317,10 +1627,20 @@ const ResultCard = ({ file, onExport, onTranslate, onUpdateFile, audioContext, o
 const VCBTranscriptionService = () => {
     const [files, setFiles] = useState([]);
     const [saveStatus, setSaveStatus] = useState('idle');
+    const [tokenRefreshCounter, setTokenRefreshCounter] = useState(0);
     const [apiKeyStatus, setApiKeyStatus] = useState(null);
     const [toasts, setToasts] = useState([]);
     const [showClearConfirm, setShowClearConfirm] = useState(false);
+    const [currentUser, setCurrentUser] = useState(null); // Supabase authentication state
+    const [isAuthenticating, setIsAuthenticating] = useState(true); // Loading state for auth
+    const [showSplash, setShowSplash] = useState(true);
+    const [currentView, setCurrentView] = useState('transcription'); // Views: 'transcription', 'buy-tokens'
     const audioContextRef = useRef(null);
+
+    useEffect(() => {
+        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+        return () => audioContextRef.current?.close();
+    }, []);
     const lastSavedFilesRef = useRef(null);
     const abortControllersRef = useRef({});  // Track abort controllers for cancellable operations
     const progressIntervalsRef = useRef({});  // Track progress intervals by file ID to prevent race conditions
@@ -1371,56 +1691,169 @@ const VCBTranscriptionService = () => {
         }
     };
 
-    // Validate API key on component mount
-    useEffect(() => {
-        const validation = validateApiKey();
-        if (!validation.valid) {
-            setApiKeyStatus({ valid: false, error: validation.error });
-            console.error('API Key Validation Failed:', validation.error);
-        } else {
-            setApiKeyStatus({ valid: true });
+    // ========== SUPABASE TOKEN SYNC ==========
+    // Sync tokens between IndexedDB (local) and Supabase (cloud)
+    const syncTokens = useCallback(async (user) => {
+        if (!user) return;
+
+        try {
+            // Get token balance from IndexedDB
+            const localBalance = await getTokenBalance();
+
+            // Get token balance from Supabase
+            const cloudBalance = await getTokenBalanceFromSupabase(user.id);
+
+            console.log('Token sync - Local:', localBalance, 'Cloud:', cloudBalance);
+
+            // If cloud has data, use it (cross-device sync priority)
+            if (cloudBalance && cloudBalance.total_tokens > 0) {
+                // Update local IndexedDB with cloud data
+                const updateData = {
+                    userId: 'local-user',
+                    totalTokens: cloudBalance.total_tokens,
+                    tokensUsed: cloudBalance.tokens_used,
+                    tokensRemaining: cloudBalance.tokens_remaining,
+                    lastUpdated: new Date().toISOString()
+                };
+
+                // Update IndexedDB to match cloud
+                const db = await initializeDatabase();
+                const tx = db.transaction(['userTokens'], 'readwrite');
+                await tx.objectStore('userTokens').put(updateData);
+
+                console.log('Tokens synced from cloud to local:', updateData);
+                showToast('Tokens synced from cloud', 'success');
+            } else if (localBalance && localBalance.tokensRemaining > 0) {
+                // Push local tokens to cloud (first time sync)
+                await updateTokenBalanceInSupabase(user.id, {
+                    totalTokens: localBalance.totalTokens,
+                    tokensUsed: localBalance.tokensUsed,
+                    tokensRemaining: localBalance.tokensRemaining
+                });
+
+                console.log('Tokens synced from local to cloud:', localBalance);
+                showToast('Tokens backed up to cloud', 'success');
+            }
+        } catch (error) {
+            console.error('Token sync error:', error);
+            // Don't show error toast - fail silently and continue with local tokens
         }
     }, []);
 
+    // Listen for authentication state changes
     useEffect(() => {
-        const initAudioContext = () => { if (!audioContextRef.current) audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)(); window.removeEventListener('click', initAudioContext); };
-        window.addEventListener('click', initAudioContext);
-        return () => window.removeEventListener('click', initAudioContext);
+        // Check current user on mount
+        getCurrentUser().then(user => {
+            setCurrentUser(user);
+            setIsAuthenticating(false);
+            if (user) {
+                console.log('Current user:', user.email);
+                syncTokens(user);
+                // If already signed-in, skip the splash
+                setShowSplash(false);
+            }
+        }).catch(error => {
+            console.error('Error getting current user:', error);
+            setIsAuthenticating(false);
+        });
+
+        // Listen for auth state changes (login/logout)
+        const { data: { subscription } } = onAuthStateChange((event, session) => {
+            console.log('Auth state changed:', event, session?.user?.email);
+            setCurrentUser(session?.user || null);
+
+            if (event === 'SIGNED_IN' && session?.user) {
+                syncTokens(session.user);
+            }
+        });
+
+        return () => subscription.unsubscribe();
+    }, [syncTokens]);
+
+    const handleSplashLogin = (user) => {
+        // Called from SplashScreen when login succeeds
+        if (user) {
+            setCurrentUser(user);
+        }
+        setShowSplash(false);
+    };
+
+    // Handle hash-based routing for different views
+    useEffect(() => {
+        const handleHashChange = () => {
+            const hash = window.location.hash.slice(1); // Remove #
+            if (hash === 'buy-tokens') {
+                setCurrentView('buy-tokens');
+            } else {
+                setCurrentView('transcription');
+            }
+        };
+
+        // Set initial view based on current hash
+        handleHashChange();
+
+        // Listen for hash changes
+        window.addEventListener('hashchange', handleHashChange);
+        return () => window.removeEventListener('hashchange', handleHashChange);
     }, []);
 
+    // Handle PayFast payment success
     useEffect(() => {
-        try {
-            const savedStateJSON = localStorage.getItem(LOCAL_STORAGE_KEY);
-            if (savedStateJSON) { setFiles(JSON.parse(savedStateJSON)); lastSavedFilesRef.current = savedStateJSON; }
-        } catch (error) { console.error("Failed to load state from localStorage:", error); }
-    }, []);
+        const processPaymentSuccess = async () => {
+            const rawPaymentData = localStorage.getItem('payfastPaymentSuccess');
+            if (!rawPaymentData) {
+                return;
+            }
 
+            try {
+                const paymentData = JSON.parse(rawPaymentData);
+                const { tokens, packageId, pfPaymentId, merchantPaymentId } = paymentData;
+
+                if (tokens && Number.isFinite(tokens) && tokens > 0) {
+                    console.log('Processing PayFast payment success:', { tokens, packageId, pfPaymentId });
+
+                    // Add tokens to user's balance
+                    await addTokens(tokens, `PayFast Purchase: ${packageId} (${pfPaymentId})`);
+
+                    // Clear the payment data from localStorage
+                    localStorage.removeItem('payfastPaymentSuccess');
+
+                    // Show success notification
+                    showToast(`${tokens.toLocaleString()} tokens added to your account!`, 'success');
+
+                    // Refresh token balance
+                    const balance = await getTokenBalance();
+                    setTokenBalance(balance);
+                } else {
+                    console.error('Invalid token amount in payment data:', paymentData);
+                }
+            } catch (error) {
+                console.error('Failed to process PayFast payment success:', error);
+                showToast('Payment received but failed to add tokens. Please contact support.', 'error');
+            }
+        };
+
+        processPaymentSuccess();
+    }, []); // Run once on mount
+
+    // Handle file auto-save to localStorage
     useEffect(() => {
         if (debouncedFiles.length > 0) {
             setSaveStatus('saving');
             try {
                 const filesToSave = debouncedFiles.map(({ file, ...rest }) => rest);
                 const filesJSON = JSON.stringify(filesToSave);
-                 if (filesJSON !== lastSavedFilesRef.current) {
+                if (filesJSON !== lastSavedFilesRef.current) {
                     localStorage.setItem(LOCAL_STORAGE_KEY, filesJSON);
                     lastSavedFilesRef.current = filesJSON;
-                    setSaveStatus('saved');
-                } else {
-                    setSaveStatus('idle');
                 }
             } catch (error) {
-                console.error("Failed to save state to localStorage:", error);
-                // Check if it's a quota exceeded error
-                if (error.name === 'QuotaExceededError' || error.code === 22) {
-                    setSaveStatus('quota_exceeded');
-                    console.error('localStorage quota exceeded. Consider clearing old sessions or reducing saved data.');
-                } else {
-                    setSaveStatus('error');
-                }
+                console.error('Failed to save files to localStorage:', error);
+            } finally {
+                setSaveStatus('idle');
             }
         } else {
-             localStorage.removeItem(LOCAL_STORAGE_KEY);
-             setSaveStatus('idle');
+            setSaveStatus('idle');
         }
     }, [debouncedFiles]);
 
@@ -1470,61 +1903,141 @@ const VCBTranscriptionService = () => {
     };
 
     const transcribeAudio = async (fileObj, tier) => {
-        updateFile(fileObj.id, { status: 'uploading', error: null, progress: 0, processingTier: tier });
+        updateFile(fileObj.id, { status: 'uploading', error: null, progress: 0, processingTier: tier, statusMessage: 'Preparing file...' });
 
-        // Use ref-based progress tracking to prevent race conditions with concurrent transcriptions
-        const simulateProgress = (targetProgress, onComplete) => {
+        // Log transcription start to audit trail
+        if (currentUser) {
+            try {
+                await logTranscriptionStart(currentUser.id, {
+                    fileName: fileObj.name,
+                    fileSize: fileObj.size,
+                    fileType: fileObj.file.type,
+                    processingTier: tier
+                });
+                console.log('Transcription start logged for user:', currentUser.email);
+            } catch (logError) {
+                console.error('Failed to log transcription start:', logError);
+            }
+        }
+
+        // Enhanced progress tracking with smoother increments and status messages
+        const simulateProgress = (startProgress, targetProgress, statusMessage, onComplete) => {
             // Clear any existing interval for this file
             if (progressIntervalsRef.current[fileObj.id]) {
                 clearInterval(progressIntervalsRef.current[fileObj.id]);
             }
 
+            // Set initial progress and status
+            updateFile(fileObj.id, { progress: startProgress, statusMessage });
+
             progressIntervalsRef.current[fileObj.id] = setInterval(() => {
                 setFiles(prevFiles => prevFiles.map(f => {
                     if (f.id === fileObj.id) {
-                        const currentProgress = f.progress || 0;
+                        const currentProgress = f.progress || startProgress;
+                        const remainingProgress = targetProgress - currentProgress;
+
+                        // Dynamic increment based on remaining progress
                         let increment = 0;
-                        if (currentProgress < 60) increment = Math.random() * 3 + 2; // Fast start
-                        else if (currentProgress < 90) increment = Math.random() * 2 + 1; // Slows down
-                        else increment = Math.random() * 0.5 + 0.2; // Crawls to the end
+                        if (remainingProgress > 30) increment = Math.random() * 2 + 1; // Fast when far from target
+                        else if (remainingProgress > 10) increment = Math.random() * 1 + 0.5; // Medium
+                        else increment = Math.random() * 0.3 + 0.1; // Slow crawl near target
+
                         const newProgress = Math.min(currentProgress + increment, targetProgress);
+
                         if (newProgress >= targetProgress) {
                             clearInterval(progressIntervalsRef.current[fileObj.id]);
                             delete progressIntervalsRef.current[fileObj.id];
                             if (onComplete) onComplete();
                         }
+
                         return { ...f, progress: Math.round(newProgress) };
                     }
                     return f;
                 }));
             }, 150);
         };
-        
+
         try {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            const audioBase64 = await fileToBase64WithProgress(fileObj.file, (progress) => updateFile(fileObj.id, { progress }));
-            
-            updateFile(fileObj.id, { status: 'processing', progress: 0 });
-            
-            simulateProgress(95); // Simulate progress while waiting for AI
 
+            // Phase 1: Reading file (0-15%)
+            updateFile(fileObj.id, { statusMessage: 'Reading audio file...' });
+            const audioBase64 = await fileToBase64WithProgress(fileObj.file, (uploadProgress) => {
+                const scaledProgress = Math.round(uploadProgress * 0.15); // Scale to 0-15%
+                updateFile(fileObj.id, { progress: scaledProgress });
+            });
+
+            // Phase 2: Generating waveform (15-20%)
+            updateFile(fileObj.id, { status: 'processing', progress: 15, statusMessage: 'Analyzing audio waveform...' });
             const waveformData = await generateWaveformData(fileObj.file);
-            const highCourtPrompt = `Perform a VERBATIM transcription...`; // Content omitted for brevity
-            const standardPrompt = `Analyze the audio and provide a comprehensive analysis...`; // Content omitted for brevity
-            const isLegalSubmission = tier === 'Legal';
-            const textPart = { text: isLegalSubmission ? highCourtPrompt : standardPrompt };
+            updateFile(fileObj.id, { progress: 20, statusMessage: 'Preparing transcription request...' });
+
+            // Tier-specific prompts with meaningful differentiation
+            // Standard (Flash): Clean transcription, NO analysis
+            const standardPrompt = `Transcribe audio. Clean up filler words. Return sentence-level JSON:
+
+{"transcription":[{"speaker":"SPEAKER 1","start":0.0,"text":""}],"speakerProfiles":[{"speaker":"SPEAKER 1","gender":""}]}
+
+- Sentence-level (not word-level)
+- Timestamps: numeric seconds
+- Speakers: SPEAKER 1, SPEAKER 2 (uppercase)
+- Remove filler words (um, uh, like, you know)
+- Valid JSON only`;
+
+            // Enhanced (Pro): Clean transcription WITH detailed analysis
+            const enhancedPrompt = `Transcribe audio. Clean up filler words. Include detailed analysis. Return sentence-level JSON:
+
+{"transcription":[{"speaker":"SPEAKER 1","start":0.0,"text":""}],"speakerProfiles":[{"speaker":"SPEAKER 1","gender":""}],"detailedAnalysis":{"sentenceComplexity":{"readabilityScore":"","wordsPerSentence":""},"keywordDensity":[{"keyword":"","count":0}]}}
+
+- Sentence-level (not word-level)
+- Timestamps: numeric seconds
+- Speakers: SPEAKER 1, SPEAKER 2 (uppercase)
+- Remove filler words (um, uh, like, you know)
+- Valid JSON only`;
+
+            // Legal (Pro): VERBATIM, NO analysis (keep every word including fillers)
+            const legalPrompt = `VERBATIM transcription. Include every word spoken. Return sentence-level JSON:
+
+{"transcription":[{"speaker":"SPEAKER 1","start":0.0,"text":""}],"speakerProfiles":[{"speaker":"SPEAKER 1","gender":""}]}
+
+- Sentence-level (not word-level)
+- Timestamps: numeric seconds
+- Speakers: SPEAKER 1, SPEAKER 2 (uppercase)
+- Include every word verbatim (keep filler words)
+- Valid JSON only`;
+
+            // Select prompt based on tier
+            let selectedPrompt;
+            if (tier === 'Legal') {
+                selectedPrompt = legalPrompt;
+            } else if (tier === 'Enhanced') {
+                selectedPrompt = enhancedPrompt;
+            } else {
+                selectedPrompt = standardPrompt;
+            }
+            const textPart = { text: selectedPrompt };
             const audioPart = { inlineData: { data: audioBase64, mimeType: fileObj.file.type || 'audio/mpeg' } };
             const geminiModelName = (tier === 'Enhanced' || tier === 'Legal') ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
             const displayModelName = (tier === 'Enhanced' || tier === 'Legal') ? 'VCB-AI-Pro' : 'VCB-AI-Flash';
-            
-            const response = await ai.models.generateContent({ model: geminiModelName, contents: { parts: [audioPart, textPart] }, config: { responseMimeType: 'application/json' } });
 
-            // Stop simulation before final processing
+            // Phase 3: AI Transcription (20-90%)
+            simulateProgress(20, 90, `Transcribing with ${displayModelName}...`);
+
+            // Wrap API call with retry logic for transient errors (503, rate limits, etc.)
+            const response = await retryWithBackoff(async () => {
+                return await ai.models.generateContent({
+                    model: geminiModelName,
+                    contents: { parts: [audioPart, textPart] },
+                    config: { responseMimeType: 'application/json' }
+                });
+            });
+
+            // Stop simulation and move to validation phase
             if (progressIntervalsRef.current[fileObj.id]) {
                 clearInterval(progressIntervalsRef.current[fileObj.id]);
                 delete progressIntervalsRef.current[fileObj.id];
             }
-            updateFile(fileObj.id, { progress: 96 });
+            updateFile(fileObj.id, { progress: 90, statusMessage: 'Parsing AI response...' });
 
             const resultText = response.text;
             if (!resultText || resultText.trim() === '') throw new Error("The AI returned an empty response.");
@@ -1543,11 +2056,100 @@ const VCBTranscriptionService = () => {
             console.log("Parsed AI response type:", typeof parsedJson, "Is array:", Array.isArray(parsedJson));
 
             if (parsedJson && parsedJson.transcription && Array.isArray(parsedJson.transcription)) {
+                console.log("AI returned standard format with transcription array. Sample segment:", JSON.stringify(parsedJson.transcription[0]));
+
+                // Normalize: Convert 'start' field to 'timestamp' if needed
+                const parseTimestampToSeconds = (timestamp) => {
+                    if (typeof timestamp === 'number') return timestamp;
+                    if (!timestamp || typeof timestamp !== 'string') return 0;
+
+                    // Handle MM:SS.ms format (e.g., "00:00.176" or "00:05.432")
+                    const mmSsMs = timestamp.match(/^(\d{1,2}):(\d{2})\.(\d{1,3})$/);
+                    if (mmSsMs) {
+                        const minutes = parseInt(mmSsMs[1], 10);
+                        const seconds = parseInt(mmSsMs[2], 10);
+                        const ms = parseInt(mmSsMs[3].padEnd(3, '0'), 10);
+                        return minutes * 60 + seconds + ms / 1000;
+                    }
+
+                    // Handle HH:MM:SS format
+                    const hhMmSs = timestamp.match(/^(\d{1,2}):(\d{2}):(\d{2})$/);
+                    if (hhMmSs) {
+                        const hours = parseInt(hhMmSs[1], 10);
+                        const minutes = parseInt(hhMmSs[2], 10);
+                        const seconds = parseInt(hhMmSs[3], 10);
+                        return hours * 3600 + minutes * 60 + seconds;
+                    }
+
+                    // Try to parse as float (seconds)
+                    const parsed = parseFloat(timestamp);
+                    return isNaN(parsed) ? 0 : parsed;
+                };
+
+                const formatSecondsToTimestamp = (totalSeconds) => {
+                    const secondsNum = parseFloat(totalSeconds);
+                    if (isNaN(secondsNum)) return '[00:00:00]';
+                    const hours = Math.floor(secondsNum / 3600);
+                    const minutes = Math.floor((secondsNum % 3600) / 60);
+                    const seconds = Math.floor(secondsNum % 60);
+                    return `[${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}]`;
+                };
+
+                // Normalize transcription segments: ensure 'timestamp' field exists
+                parsedJson.transcription = parsedJson.transcription.map(segment => {
+                    // If segment has 'start' but no 'timestamp', convert it
+                    if (!segment.timestamp && (segment.start !== undefined || segment.start_time !== undefined)) {
+                        const startTime = segment.start_time || segment.start || 0;
+                        const totalSeconds = parseTimestampToSeconds(startTime);
+
+                        let speaker = segment.speaker || "SPEAKER 1";
+                        // Normalize "n/a", "N/A", "null", or empty strings to default speaker
+                        if (!speaker || speaker.toString().toLowerCase() === 'n/a' || speaker.toString().toLowerCase() === 'null') {
+                            speaker = "SPEAKER 1";
+                        }
+
+                        return {
+                            speaker: speaker.toUpperCase().replace(/SPEAKER_(\d+)/i, 'SPEAKER $1'),
+                            timestamp: formatSecondsToTimestamp(totalSeconds),
+                            dialogue: decodeHTMLEntities(segment.text || segment.dialogue || "")
+                        };
+                    }
+                    return segment;
+                });
+
                 result = parsedJson;
             }
             else if (parsedJson && Array.isArray(parsedJson)) {
-                if (parsedJson.length > 0 && typeof parsedJson[0] === 'object' && parsedJson[0] !== null && 'start' in parsedJson[0] && 'text' in parsedJson[0]) {
+                if (parsedJson.length > 0 && typeof parsedJson[0] === 'object' && parsedJson[0] !== null && ('start' in parsedJson[0] || 'start_time' in parsedJson[0]) && ('text' in parsedJson[0])) {
                     console.warn("AI returned a flat transcription array of objects. Adapting to standard format.");
+
+                    const parseTimestampToSeconds = (timestamp) => {
+                        if (typeof timestamp === 'number') return timestamp;
+                        if (!timestamp || typeof timestamp !== 'string') return 0;
+
+                        // Handle MM:SS.ms format (e.g., "00:00.176" or "00:05.432")
+                        const mmSsMs = timestamp.match(/^(\d{1,2}):(\d{2})\.(\d{1,3})$/);
+                        if (mmSsMs) {
+                            const minutes = parseInt(mmSsMs[1], 10);
+                            const seconds = parseInt(mmSsMs[2], 10);
+                            const ms = parseInt(mmSsMs[3].padEnd(3, '0'), 10);
+                            return minutes * 60 + seconds + ms / 1000;
+                        }
+
+                        // Handle HH:MM:SS format
+                        const hhMmSs = timestamp.match(/^(\d{1,2}):(\d{2}):(\d{2})$/);
+                        if (hhMmSs) {
+                            const hours = parseInt(hhMmSs[1], 10);
+                            const minutes = parseInt(hhMmSs[2], 10);
+                            const seconds = parseInt(hhMmSs[3], 10);
+                            return hours * 3600 + minutes * 60 + seconds;
+                        }
+
+                        // Try to parse as float (seconds)
+                        const parsed = parseFloat(timestamp);
+                        return isNaN(parsed) ? 0 : parsed;
+                    };
+
                     const formatSecondsToTimestamp = (totalSeconds) => {
                         const secondsNum = parseFloat(totalSeconds);
                         if (isNaN(secondsNum)) return '[00:00:00]';
@@ -1556,6 +2158,7 @@ const VCBTranscriptionService = () => {
                         const seconds = Math.floor(secondsNum % 60);
                         return `[${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}]`;
                     };
+
                     result = {
                         transcription: parsedJson.map(segment => {
                             let speaker = segment.speaker || "SPEAKER 1";
@@ -1563,10 +2166,15 @@ const VCBTranscriptionService = () => {
                             if (!speaker || speaker.toString().toLowerCase() === 'n/a' || speaker.toString().toLowerCase() === 'null') {
                                 speaker = "SPEAKER 1";
                             }
+
+                            // Handle both 'start' and 'start_time' fields
+                            const startTime = segment.start_time || segment.start || 0;
+                            const totalSeconds = parseTimestampToSeconds(startTime);
+
                             return {
-                                speaker,
-                                timestamp: formatSecondsToTimestamp(segment.start),
-                                dialogue: segment.text || ""
+                                speaker: speaker.toUpperCase().replace(/SPEAKER_(\d+)/i, 'SPEAKER $1'),
+                                timestamp: formatSecondsToTimestamp(totalSeconds),
+                                dialogue: decodeHTMLEntities(segment.text || "")
                             };
                         }),
                         speakerProfiles: [{ speaker: "SPEAKER 1", gender: "unknown" }],
@@ -1595,37 +2203,100 @@ const VCBTranscriptionService = () => {
                         return `[${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}]`;
                     };
 
-                    result = {
-                        transcription: parsedJson.map((segment, index) => {
-                            // Try multiple field name variations for text content
-                            const dialogue = segment.text || segment.dialogue || segment.content ||
-                                           segment.transcription || segment.transcript ||
-                                           JSON.stringify(segment);
+                    // Check if this is word-level data with { word, start, end } structure
+                    const isWordLevelData = parsedJson[0].word !== undefined &&
+                                           parsedJson[0].start !== undefined;
 
-                            // Try multiple field name variations for speaker
-                            let speaker = segment.speaker || segment.name || segment.speakerName || "SPEAKER 1";
-                            // Normalize "n/a", "N/A", "null", or empty strings to default speaker (§1.3)
-                            if (!speaker || speaker.toString().toLowerCase() === 'n/a' || speaker.toString().toLowerCase() === 'null') {
-                                speaker = "SPEAKER 1";
-                            }
+                    if (isWordLevelData) {
+                        // Group words into sentences by pauses (>1.5 second gaps) or punctuation
+                        const groupedSegments = [];
+                        let currentSegment = null;
+                        const PAUSE_THRESHOLD = 1.5; // seconds
 
-                            // Try multiple field name variations for timestamp
-                            let timestamp;
-                            if (segment.timestamp) {
-                                timestamp = segment.timestamp;
-                            } else if (segment.start !== undefined) {
-                                timestamp = formatSecondsToTimestamp(segment.start);
-                            } else if (segment.time !== undefined) {
-                                timestamp = formatSecondsToTimestamp(segment.time);
+                        for (let i = 0; i < parsedJson.length; i++) {
+                            const wordObj = parsedJson[i];
+                            const word = wordObj.word || '';
+
+                            if (!currentSegment) {
+                                // Start new segment
+                                currentSegment = {
+                                    words: [word],
+                                    startTime: wordObj.start || 0,
+                                    endTime: wordObj.end || 0,
+                                    speaker: wordObj.speaker || "SPEAKER 1"
+                                };
                             } else {
-                                timestamp = `[00:00:${String(index).padStart(2, '0')}]`;
-                            }
+                                // Check if we should continue current segment or start new one
+                                const timeSinceLastWord = (wordObj.start || 0) - currentSegment.endTime;
+                                const shouldBreak = timeSinceLastWord > PAUSE_THRESHOLD ||
+                                                   currentSegment.words.length >= 50 ||
+                                                   (currentSegment.words.length > 5 && /[.!?]$/.test(currentSegment.words[currentSegment.words.length - 1]));
 
-                            return { speaker, timestamp, dialogue };
-                        }),
-                        speakerProfiles: [{ speaker: "SPEAKER 1", gender: "unknown" }],
-                        detailedAnalysis: { sentenceComplexity: { readabilityScore: "N/A", wordsPerSentence: "N/A" }, keywordDensity: [] }
-                    };
+                                if (shouldBreak) {
+                                    // Save current segment and start new one
+                                    groupedSegments.push(currentSegment);
+                                    currentSegment = {
+                                        words: [word],
+                                        startTime: wordObj.start || 0,
+                                        endTime: wordObj.end || 0,
+                                        speaker: wordObj.speaker || "SPEAKER 1"
+                                    };
+                                } else {
+                                    // Continue current segment
+                                    currentSegment.words.push(word);
+                                    currentSegment.endTime = wordObj.end || currentSegment.endTime;
+                                }
+                            }
+                        }
+
+                        // Push final segment
+                        if (currentSegment && currentSegment.words.length > 0) {
+                            groupedSegments.push(currentSegment);
+                        }
+
+                        result = {
+                            transcription: groupedSegments.map(seg => ({
+                                speaker: seg.speaker,
+                                timestamp: formatSecondsToTimestamp(seg.startTime),
+                                dialogue: decodeHTMLEntities(seg.words.join(' '))
+                            })),
+                            speakerProfiles: [{ speaker: "SPEAKER 1", gender: "unknown" }],
+                            detailedAnalysis: { sentenceComplexity: { readabilityScore: "N/A", wordsPerSentence: "N/A" }, keywordDensity: [] }
+                        };
+                    } else {
+                        // Original logic for non-word-level data
+                        result = {
+                            transcription: parsedJson.map((segment, index) => {
+                                // Try multiple field name variations for text content
+                                const dialogue = segment.text || segment.dialogue || segment.content ||
+                                               segment.transcription || segment.transcript || segment.word ||
+                                               JSON.stringify(segment);
+
+                                // Try multiple field name variations for speaker
+                                let speaker = segment.speaker || segment.name || segment.speakerName || "SPEAKER 1";
+                                // Normalize "n/a", "N/A", "null", or empty strings to default speaker (§1.3)
+                                if (!speaker || speaker.toString().toLowerCase() === 'n/a' || speaker.toString().toLowerCase() === 'null') {
+                                    speaker = "SPEAKER 1";
+                                }
+
+                                // Try multiple field name variations for timestamp
+                                let timestamp;
+                                if (segment.timestamp) {
+                                    timestamp = segment.timestamp;
+                                } else if (segment.start !== undefined) {
+                                    timestamp = formatSecondsToTimestamp(segment.start);
+                                } else if (segment.time !== undefined) {
+                                    timestamp = formatSecondsToTimestamp(segment.time);
+                                } else {
+                                    timestamp = `[00:00:${String(index).padStart(2, '0')}]`;
+                                }
+
+                                return { speaker, timestamp, dialogue: decodeHTMLEntities(dialogue) };
+                            }),
+                            speakerProfiles: [{ speaker: "SPEAKER 1", gender: "unknown" }],
+                            detailedAnalysis: { sentenceComplexity: { readabilityScore: "N/A", wordsPerSentence: "N/A" }, keywordDensity: [] }
+                        };
+                    }
                 } else if (parsedJson.length === 0) {
                     throw new Error("AI returned an empty array.");
                 } else {
@@ -1684,6 +2355,9 @@ const VCBTranscriptionService = () => {
                 return seconds;
             };
             
+            // Phase 4: Validation (90-95%)
+            updateFile(fileObj.id, { progress: 92, statusMessage: 'Validating transcription...' });
+
             let lastTimestampInSeconds = -1;
             const hasFallbackTimestamps = timestamps.some(ts => /\[Line\s+\d+\]/i.test(ts));
 
@@ -1705,7 +2379,9 @@ const VCBTranscriptionService = () => {
                 }
                 lastTimestampInSeconds = currentTimestampInSeconds;
             }
-            updateFile(fileObj.id, { progress: 98 });
+
+            // Phase 5: Finalization (95-100%)
+            updateFile(fileObj.id, { progress: 95, statusMessage: 'Finalizing transcription...' });
 
             const voiceMap = {};
             let maleVoiceIndex = 0, femaleVoiceIndex = 0;
@@ -1715,7 +2391,25 @@ const VCBTranscriptionService = () => {
             });
             
             const finalResult = { ...result, voiceMap, waveformData, duration: lastTimestampInSeconds, timestamp: new Date().toISOString(), filename: fileObj.name, modelUsed: displayModelName, displayTranscription: result.transcription, displayLanguage: 'Original', translations: {}, processingTier: tier };
-            updateFile(fileObj.id, { status: 'completed', result: finalResult, progress: 100 });
+            updateFile(fileObj.id, { status: 'completed', result: finalResult, progress: 100, statusMessage: 'Transcription complete!' });
+
+            // Log transcription complete to audit trail
+            if (currentUser) {
+                try {
+                    // Calculate tokens used (this should match your actual token calculation)
+                    const transcriptionCost = calculateServiceCost(lastTimestampInSeconds / 60);
+                    const tokensUsed = transcriptionCost.tokens;
+
+                    await logTranscriptionComplete(currentUser.id, {
+                        fileName: fileObj.name,
+                        duration: lastTimestampInSeconds,
+                        processingTier: tier
+                    }, tokensUsed);
+                    console.log('Transcription complete logged for user:', currentUser.email);
+                } catch (logError) {
+                    console.error('Failed to log transcription complete:', logError);
+                }
+            }
         } catch (err) {
             console.error('Transcription Error:', err);
             const categorized = categorizeError(err);
@@ -1726,6 +2420,20 @@ const VCBTranscriptionService = () => {
                 canRetry: categorized.canRetry,
                 progress: 0
             });
+
+            // Log transcription failed to audit trail
+            if (currentUser) {
+                try {
+                    await logTranscriptionFailed(currentUser.id, {
+                        fileName: fileObj.name,
+                        fileSize: fileObj.size,
+                        processingTier: tier
+                    }, categorized.userMessage);
+                    console.log('Transcription failure logged for user:', currentUser.email);
+                } catch (logError) {
+                    console.error('Failed to log transcription failure:', logError);
+                }
+            }
         } finally {
             // Ensure progress interval is cleaned up
             if (progressIntervalsRef.current[fileObj.id]) {
@@ -1791,7 +2499,9 @@ const VCBTranscriptionService = () => {
                 setTimeout(() => reject(new Error('Translation request timeout after 60 seconds')), 60000)
             );
 
-            const apiPromise = ai.models.generateContent({ model: 'gemini-2.5-flash', contents: `${prompt}\n\n${originalText}` });
+            const apiPromise = retryWithBackoff(async () => {
+                return await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: `${prompt}\n\n${originalText}` });
+            });
             const response = await Promise.race([apiPromise, timeoutPromise]);
 
             if (!response || !response.text) {
@@ -1881,7 +2591,9 @@ const VCBTranscriptionService = () => {
                 setTimeout(() => reject(new Error('Summary generation timeout after 45 seconds')), 45000)
             );
 
-            const apiPromise = ai.models.generateContent({ model: 'gemini-2.5-flash', contents: `${prompt}\n\n${transcriptText}` });
+            const apiPromise = retryWithBackoff(async () => {
+                return await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: `${prompt}\n\n${transcriptText}` });
+            });
             const response = await Promise.race([apiPromise, timeoutPromise]);
 
             if (!response || !response.text) {
@@ -1923,7 +2635,9 @@ const VCBTranscriptionService = () => {
                 setTimeout(() => reject(new Error('Action item extraction timeout after 45 seconds')), 45000)
             );
 
-            const apiPromise = ai.models.generateContent({ model: 'gemini-2.5-pro', contents: `${prompt}\n\n${transcriptText}` });
+            const apiPromise = retryWithBackoff(async () => {
+                return await ai.models.generateContent({ model: 'gemini-2.5-pro', contents: `${prompt}\n\n${transcriptText}` });
+            });
             const response = await Promise.race([apiPromise, timeoutPromise]);
 
             if (!response || !response.text) {
@@ -1943,6 +2657,66 @@ const VCBTranscriptionService = () => {
                     isExtracting: false
                 }
             });
+        }
+    };
+
+    const exportTranscription = async (fileId, exportOptions = {}) => {
+        const file = files.find(f => f.id === fileId);
+        if (!file?.result) {
+            showToast('Could not find file data to export.', 'error');
+            return;
+        }
+
+        const { result } = file;
+        const transcriptSegments = result.transcription || [];
+        if (transcriptSegments.length === 0) {
+            showToast('Transcript data is unavailable for this file.', 'error');
+            return;
+        }
+
+        const templateType = exportOptions.templateType || (result.processingTier === 'Legal' ? 'HIGH_COURT' : 'PROFESSIONAL');
+        const transcriptText = segmentsToFormattedText(transcriptSegments);
+
+        try {
+            let docxDocument;
+            const hasTranslation = result.displayLanguage !== 'Original' && result.translations[result.displayLanguage];
+            
+            if (templateType === 'HIGH_COURT' && hasTranslation) {
+                const translationText = segmentsToFormattedText(result.translations[result.displayLanguage]);
+                docxDocument = generateHighCourtBilingualDocument(transcriptText, translationText, {
+                    caseNumber: '[Case Number Placeholder]',
+                    fileName: result.filename || file.name,
+                    sourceLanguage: 'English',
+                    targetLanguage: result.displayLanguage
+                });
+            } else if (templateType === 'HIGH_COURT') {
+                docxDocument = generateHighCourtDocument(transcriptText, { caseNumber: '[Case Number Placeholder]', fileName: result.filename || file.name });
+            } else if (templateType === 'BILINGUAL' && hasTranslation) {
+                const translationText = segmentsToFormattedText(result.translations[result.displayLanguage]);
+                docxDocument = generateBilingualDocument(transcriptText, translationText, {
+                    sourceLanguage: 'English',
+                    targetLanguage: result.displayLanguage,
+                    fileName: result.filename || file.name
+                });
+            } else {
+                docxDocument = generateProfessionalDocument(transcriptText, { fileName: result.filename || file.name });
+            }
+
+            const documentBlob = await Packer.toBlob(docxDocument);
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(documentBlob);
+            const date = new Date().toISOString().split('T')[0];
+            const wordCount = transcriptText.split(/\s+/).filter(w => w.length > 0).length;
+            const templateSuffix = templateType === 'HIGH_COURT' ? 'HighCourt' : templateType === 'BILINGUAL' ? 'Bilingual' : 'Professional';
+            const langSuffix = hasTranslation ? `_${result.displayLanguage}` : '';
+            link.download = `${date}_${wordCount}words_${templateSuffix}${langSuffix}.docx`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+        } catch (error) {
+            console.error('Export error:', error);
+            showToast(`Export failed: ${error.message}`, 'error');
         }
     };
 
@@ -1980,27 +2754,50 @@ const VCBTranscriptionService = () => {
                     setTimeout(() => reject(new Error('Tidied view generation timeout after 60 seconds')), 60000)
                 );
 
-                const apiPromise = ai.models.generateContent({
-                    model: 'gemini-2.5-flash',
-                    contents: `${prompt}\n\n${JSON.stringify(originalTranscript, null, 2)}`,
-                    config: { responseMimeType: 'application/json' }
+                const apiPromise = retryWithBackoff(async () => {
+                    return await ai.models.generateContent({
+                        model: 'gemini-2.5-flash',
+                        contents: `${prompt}\n\n${JSON.stringify(originalTranscript, null, 2)}`,
+                        config: { responseMimeType: 'application/json' }
+                    });
                 });
 
                 const response = await Promise.race([apiPromise, timeoutPromise]);
 
+                console.log("Tidied View - Full response object:", response);
+                console.log("Tidied View - Response text type:", typeof response?.text);
+                console.log("Tidied View - Response text preview:", response?.text?.substring(0, 200));
+
                 if (!response || !response.text) {
+                    console.error("Tidied view response structure:", JSON.stringify(response, null, 2));
                     throw new Error("Tidied view API returned an empty response.");
                 }
 
-                const tidiedJson = JSON.parse(response.text.replace(/```json|```/g, '').trim());
+                let tidiedJson;
+                try {
+                    const cleanedText = response.text.replace(/```json|```/g, '').trim();
+                    console.log("Tidied View - Cleaned response text:", cleanedText.substring(0, 300));
+                    tidiedJson = JSON.parse(cleanedText);
+                } catch (parseError) {
+                    console.error("Tidied View - JSON parse error:", parseError);
+                    console.error("Tidied View - Raw response text:", response.text);
+                    throw new Error(`Failed to parse tidied transcript: ${parseError.message}`);
+                }
+
+                console.log("Tidied View - Parsed JSON type:", typeof tidiedJson, "Is array:", Array.isArray(tidiedJson));
+                console.log("Tidied View - Original length:", originalTranscript.length, "Tidied length:", tidiedJson?.length);
 
                 if (!Array.isArray(tidiedJson) || tidiedJson.length !== originalTranscript.length) {
-                    throw new Error("Tidied response from AI was not a matching array. Expected same length as original.");
+                    console.error("Tidied View - Length mismatch. Expected:", originalTranscript.length, "Got:", tidiedJson?.length);
+                    throw new Error(`Tidied response from AI was not a matching array. Expected ${originalTranscript.length} items, got ${tidiedJson?.length || 0}.`);
                 }
 
                 resultUpdate.tidiedTranscription = tidiedJson;
                 resultUpdate.isTidying = false;
+                resultUpdate.tidiedError = null;
+                resultUpdate.tidiedErrorSuggestion = null;
                 updateFile(fileId, { result: resultUpdate });
+                showToast('Tidied view generated successfully!', 'success');
 
             } catch (error) {
                 console.error("Tidy Transcript Error:", error);
@@ -2010,62 +2807,14 @@ const VCBTranscriptionService = () => {
                 resultUpdate.tidiedError = categorized.userMessage;
                 resultUpdate.tidiedErrorSuggestion = categorized.suggestion;
                 updateFile(fileId, { result: resultUpdate });
+                showToast(`Tidied view failed: ${categorized.userMessage}`, 'error');
             }
         } else {
             updateFile(fileId, { result: resultUpdate });
         }
     };
 
-    const exportTranscription = async (fileId, options) => {
-        const file = files.find(f => f.id === fileId);
-        if (!file || !file.result) {
-            showToast("Could not find file data to export.", 'error');
-            return;
-        }
 
-        const zip = new JSZip();
-        const { result } = file;
-
-        try {
-            if (options.waveform && result.waveformData) {
-                const svgString = generateWaveformSvg(result.waveformData);
-                zip.file('Waveform.svg', svgString);
-            }
-
-            if (result.processingTier === 'Legal') {
-                if (options.transcript) {
-                    const doc = generateLegalDoc(result);
-                    const blob = await Packer.toBlob(doc);
-                    zip.file(`Legal_Transcript_${result.filename.replace(/\.[^/.]+$/, "")}.docx`, blob);
-                }
-            } else {
-                if (options.transcript) {
-                    const doc = generateStandardTranscriptDoc(result);
-                    const blob = await Packer.toBlob(doc);
-                    zip.file(`Transcript_${result.filename.replace(/\.[^/.]+$/, "")}.docx`, blob);
-                }
-                if (options.analysis && (result.detailedAnalysis || result.summary || result.actionItems)) {
-                    const doc = generateAnalysisReportDoc(result);
-                    const blob = await Packer.toBlob(doc);
-                    zip.file(`Analysis_Report_${result.filename.replace(/\.[^/.]+$/, "")}.docx`, blob);
-                }
-            }
-
-            const zipBlob = await zip.generateAsync({ type: 'blob' });
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(zipBlob);
-            link.download = `VCB_Export_${result.filename.replace(/\.[^/.]+$/, "")}.zip`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(link.href);
-
-        } catch (error) {
-            console.error("Export Error:", error);
-            showToast(`An error occurred during export: ${error.message}`, 'error');
-        }
-    };
-    
     const handleRemove = (id) => setFiles(prev => prev.filter(f => f.id !== id));
     const handleClearAll = () => setShowClearConfirm(true);
     const confirmClearAll = () => {
@@ -2086,13 +2835,52 @@ const VCBTranscriptionService = () => {
         return () => window.removeEventListener('resize', checkMobile);
     }, []);
 
+    if (showSplash) {
+        return <SplashScreen onLoginSuccess={handleSplashLogin} />;
+    }
+
+    // Render Token Purchase Page if user navigated to #buy-tokens
+    if (currentView === 'buy-tokens') {
+        return (
+            <React.Fragment>
+                <AuthenticationWidget currentUser={currentUser} onAuthChange={setCurrentUser} />
+                <TokenBalanceWidget currentUser={currentUser} onRefresh={tokenRefreshCounter} />
+                <div style={{ padding: '20px' }}>
+                    <button
+                        onClick={() => { window.location.hash = ''; setCurrentView('transcription'); }}
+                        style={{
+                            marginBottom: '20px',
+                            padding: '10px 20px',
+                            backgroundColor: '#000000',
+                            color: '#FFFFFF',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontFamily: 'Quicksand, sans-serif',
+                            fontWeight: 600
+                        }}
+                    >
+                        ← Back to Transcription
+                    </button>
+                    <TokenPurchasePage />
+                </div>
+                <LocalAIAssistant />
+            </React.Fragment>
+        );
+    }
+
+    // Main transcription view
     return (
-        <div style={{
-            maxWidth: '1200px',
-            margin: 'auto',
-            padding: isMobile ? 'var(--spacing-5) var(--spacing-4)' : 'var(--spacing-7) var(--spacing-5)'
-        }}>
-            <AppHeader />
+        <React.Fragment>
+            <AuthenticationWidget currentUser={currentUser} onAuthChange={setCurrentUser} />
+            <TokenBalanceWidget currentUser={currentUser} onRefresh={tokenRefreshCounter} />
+            <POPIAWarningModal currentUser={currentUser} onAccept={() => console.log('POPIA Accepted')} />
+            <div style={{
+                maxWidth: '1200px',
+                margin: 'auto',
+                padding: isMobile ? 'var(--spacing-5) var(--spacing-4)' : 'var(--spacing-7) var(--spacing-5)'
+            }}>
+                <AppHeader />
             <main style={{
                 display: 'grid',
                 gap: isMobile ? 'var(--spacing-6)' : 'var(--spacing-8)'
@@ -2149,6 +2937,8 @@ const VCBTranscriptionService = () => {
                 />
             )}
         </div>
+        <LocalAIAssistant />
+        </React.Fragment>
     );
 };
 

@@ -1,0 +1,9 @@
+{
+  "name": "q-proxy",
+  "version": "1.0.0",
+  "dependencies": {
+    "@aws-sdk/client-qbusiness": "^3.0.0",
+    "jsonwebtoken": "^9.0.0",
+    "jwk-to-pem": "^2.0.5"
+  }
+}

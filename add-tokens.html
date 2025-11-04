@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Add 500 Tokens</title>
+</head>
+<body>
+    <h1>Adding 500 tokens...</h1>
+    <div id="result"></div>
+
+    <script>
+        // Initialize IndexedDB with CORRECT structure
+    const DB_NAME = 'VCBTranscriptionApp';
+        const DB_VERSION = 1;
+
+        function openDatabase() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => resolve(request.result);
+
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+
+                    // Create userTokens store (CORRECT)
+                    if (!db.objectStoreNames.contains('userTokens')) {
+                        db.createObjectStore('userTokens', { keyPath: 'userId' });
+                    }
+
+                    if (!db.objectStoreNames.contains('transcriptions')) {
+                        const transcriptionsStore = db.createObjectStore('transcriptions', { keyPath: 'id', autoIncrement: true });
+                        transcriptionsStore.createIndex('timestamp', 'timestamp', { unique: false });
+                        transcriptionsStore.createIndex('fileName', 'fileName', { unique: false });
+                    }
+
+                    if (!db.objectStoreNames.contains('settings')) {
+                        db.createObjectStore('settings', { keyPath: 'key' });
+                    }
+
+                    if (!db.objectStoreNames.contains('tokenHistory')) {
+                        const historyStore = db.createObjectStore('tokenHistory', { keyPath: 'id', autoIncrement: true });
+                        historyStore.createIndex('timestamp', 'timestamp', { unique: false });
+                    }
+                };
+            });
+        }
+
+        async function addTokens(amount) {
+            try {
+                const db = await openDatabase();
+                const transaction = db.transaction(['userTokens'], 'readwrite');
+                const store = transaction.objectStore('userTokens');
+
+                // Get current balance with CORRECT key
+                const getRequest = store.get('local-user');
+
+                getRequest.onsuccess = () => {
+                    const currentData = getRequest.result;
+                    const currentBalance = currentData ? currentData.tokensRemaining : 0;
+                    const currentTotal = currentData ? currentData.totalTokens : 0;
+                    const currentUsed = currentData ? currentData.tokensUsed : 0;
+
+                    // Update balance with CORRECT structure
+                    const putRequest = store.put({
+                        userId: 'local-user',
+                        totalTokens: currentTotal + amount,
+                        tokensUsed: currentUsed,
+                        tokensRemaining: currentBalance + amount,
+                        lastUpdated: new Date().toISOString()
+                    });
+
+                    putRequest.onsuccess = () => {
+                        document.getElementById('result').innerHTML = `
+                            <h2 style="color: green;">✅ Success!</h2>
+                            <p><strong>Previous balance:</strong> ${currentBalance} tokens</p>
+                            <p><strong>Added:</strong> ${amount} tokens</p>
+                            <p style="font-size: 24px; color: green;"><strong>New balance: ${currentBalance + amount} tokens</strong></p>
+                            <br>
+                            <p>✅ Tokens successfully loaded into IndexedDB!</p>
+                            <p>👉 Refresh your app at <a href="http://localhost:3000/vcb-transcription-service/" target="_blank">localhost:3000/vcb-transcription-service/</a></p>
+                        `;
+                        console.log(`Successfully added ${amount} tokens. New balance: ${currentBalance + amount}`);
+                    };
+
+                    putRequest.onerror = () => {
+                        document.getElementById('result').innerHTML = `<h2 style="color: red;">❌ Error updating balance!</h2>`;
+                        console.error('Error updating balance:', putRequest.error);
+                    };
+                };
+
+                getRequest.onerror = () => {
+                    document.getElementById('result').innerHTML = `<h2 style="color: red;">❌ Error reading balance!</h2>`;
+                    console.error('Error reading balance:', getRequest.error);
+                };
+
+            } catch (error) {
+                document.getElementById('result').innerHTML = `<h2 style="color: red;">❌ Error: ${error.message}</h2>`;
+                console.error('Error:', error);
+            }
+        }
+
+        // Add 500 tokens on page load
+        addTokens(500);
+    </script>
+</body>
+</html>

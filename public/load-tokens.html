@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Load 500 Tokens - VCB Transcription</title>
+    <style>
+        body {
+            font-family: 'Quicksand', sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+        button {
+            background: #000;
+            color: #fff;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            font-family: 'Quicksand', sans-serif;
+            font-weight: 500;
+        }
+        button:hover {
+            background: #333;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>💰 Load Tokens</h1>
+        <p>This will add 500 tokens to your account in IndexedDB.</p>
+        <button onclick="loadTokens()">Add 500 Tokens</button>
+        <div id="result"></div>
+    </div>
+
+    <script>
+    const DB_NAME = 'VCBTranscriptionApp';
+        const DB_VERSION = 1;
+
+        function openDatabase() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => resolve(request.result);
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    if (!db.objectStoreNames.contains('userTokens')) {
+                        db.createObjectStore('userTokens', { keyPath: 'userId' });
+                    }
+                    if (!db.objectStoreNames.contains('transcriptions')) {
+                        const store = db.createObjectStore('transcriptions', { keyPath: 'transcriptionId', autoIncrement: true });
+                        store.createIndex('uploadDate', 'uploadDate', { unique: false });
+                        store.createIndex('fileName', 'fileName', { unique: false });
+                    }
+                    if (!db.objectStoreNames.contains('transactions')) {
+                        const txStore = db.createObjectStore('transactions', { keyPath: 'id', autoIncrement: true });
+                        txStore.createIndex('date', 'date', { unique: false });
+                    }
+                    if (!db.objectStoreNames.contains('settings')) {
+                        db.createObjectStore('settings', { keyPath: 'settingKey' });
+                    }
+                };
+            });
+        }
+
+        async function loadTokens() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p>Loading tokens...</p>';
+
+            try {
+                const db = await openDatabase();
+                const tx = db.transaction(['userTokens'], 'readwrite');
+                const store = tx.objectStore('userTokens');
+
+                // Get current balance
+                const getRequest = store.get('local-user');
+
+                getRequest.onsuccess = () => {
+                    const currentData = getRequest.result;
+                    const currentBalance = currentData ? currentData.tokensRemaining : 0;
+                    const currentTotal = currentData ? currentData.totalTokens : 0;
+                    const currentUsed = currentData ? currentData.tokensUsed : 0;
+
+                    // Add 500 tokens
+                    const newBalance = {
+                        userId: 'local-user',
+                        totalTokens: currentTotal + 500,
+                        tokensUsed: currentUsed,
+                        tokensRemaining: currentBalance + 500,
+                        lastUpdated: new Date().toISOString()
+                    };
+
+                    const putRequest = store.put(newBalance);
+
+                    putRequest.onsuccess = () => {
+                        resultDiv.className = 'success';
+                        resultDiv.innerHTML = `
+                            <h2>✅ Success!</h2>
+                            <p><strong>Previous balance:</strong> ${currentBalance} tokens</p>
+                            <p><strong>Added:</strong> 500 tokens</p>
+                            <p style="font-size: 18px;"><strong>New balance: ${currentBalance + 500} tokens</strong></p>
+                            <br>
+                            <p><a href="../vcb-transcription-service/" style="color: #000; text-decoration: underline;">← Back to App</a></p>
+                        `;
+
+                        // Auto-redirect after 2 seconds
+                        setTimeout(() => {
+                            window.location.href = '../vcb-transcription-service/';
+                        }, 2000);
+                    };
+
+                    putRequest.onerror = () => {
+                        resultDiv.className = 'error';
+                        resultDiv.innerHTML = '<h2>❌ Error updating balance</h2>';
+                        console.error('Error:', putRequest.error);
+                    };
+                };
+
+                getRequest.onerror = () => {
+                    resultDiv.className = 'error';
+                    resultDiv.innerHTML = '<h2>❌ Error reading balance</h2>';
+                    console.error('Error:', getRequest.error);
+                };
+
+            } catch (error) {
+                resultDiv.className = 'error';
+                resultDiv.innerHTML = `<h2>❌ Error: ${error.message}</h2>`;
+                console.error('Error:', error);
+            }
+        }
+
+        // Auto-load on page load
+        window.onload = () => loadTokens();
+    </script>
+</body>
+</html>

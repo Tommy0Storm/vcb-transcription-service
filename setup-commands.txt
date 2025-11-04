@@ -1,0 +1,17 @@
+# Quick Setup Commands
+
+# 1. Create Q Business App in AWS Console (af-south-1)
+# Note your Application ID: q-app-XXXXXXXXXX
+
+# 2. Update Secrets Manager (replace YOUR-APP-ID)
+aws secretsmanager update-secret --secret-id vcb-q-business-config --secret-string "{\"applicationId\":\"q-app-YOUR-APP-ID\",\"encryptionKeyAlias\":\"alias/aws/secretsmanager\"}" --region af-south-1
+
+# 3. Deploy Infrastructure
+cd aws
+./deploy.sh
+
+# 4. Copy API URL to .env.local
+# VITE_Q_PROXY_URL=https://your-api-id.execute-api.af-south-1.amazonaws.com/prod
+
+# 5. Test
+npm run dev

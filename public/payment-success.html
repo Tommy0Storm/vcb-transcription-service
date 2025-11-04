@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Payment Successful &mdash; VCB AI</title>
+    <style>
+        body {
+            font-family: 'Quicksand', Arial, sans-serif;
+            background: #f5f5f5;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            min-height: 100vh;
+            align-items: center;
+            justify-content: center;
+        }
+        .card {
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            max-width: 420px;
+            width: 90%;
+            padding: 32px;
+            text-align: center;
+        }
+        h1 {
+            margin-top: 0;
+            font-size: 28px;
+            letter-spacing: 0.04em;
+        }
+        p {
+            font-size: 15px;
+            line-height: 1.6;
+            margin-bottom: 16px;
+            color: #333333;
+        }
+        .highlight {
+            font-weight: 700;
+            color: #28a745;
+        }
+        .note {
+            font-size: 13px;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Payment Successful</h1>
+        <p id="status-message">Confirming your token purchase&hellip;</p>
+        <p class="note">You will be redirected back to the transcription app automatically.</p>
+    </div>
+
+    <script>
+        (function () {
+            const params = new URLSearchParams(window.location.search);
+            const tokensRaw = params.get('custom_int1') || params.get('amount');
+            const tokens = Number.parseInt(tokensRaw, 10);
+            const packageId = params.get('custom_str1') || '';
+            const pfPaymentId = params.get('pf_payment_id') || '';
+            const merchantPaymentId = params.get('m_payment_id') || '';
+            const emailAddress = params.get('email_address') || '';
+            const statusMessage = document.getElementById('status-message');
+
+            try {
+                if (Number.isFinite(tokens) && tokens > 0) {
+                    const payload = {
+                        tokens,
+                        packageId,
+                        pfPaymentId,
+                        merchantPaymentId,
+                        emailAddress,
+                        timestamp: new Date().toISOString()
+                    };
+                    localStorage.setItem('payfastPaymentSuccess', JSON.stringify(payload));
+
+                    statusMessage.innerHTML = `<span class="highlight">${tokens.toLocaleString()} tokens</span> credited. Redirecting&hellip;`;
+                } else {
+                    statusMessage.textContent = 'We received the payment but could not confirm the token amount. Please contact support with your PayFast receipt.';
+                }
+            } catch (error) {
+                console.error('Failed to persist PayFast success payload:', error);
+                statusMessage.textContent = 'Something went wrong while saving your token credit. Please contact support with your PayFast receipt.';
+            }
+
+            const redirectPath = window.location.pathname.replace(/payment-success\.html$/i, '');
+            const normalizedPath = redirectPath.endsWith('/') ? redirectPath : `${redirectPath}/`;
+            const redirectUrl = `${window.location.origin}${normalizedPath}`;
+
+            setTimeout(() => {
+                window.location.href = redirectUrl;
+            }, 1800);
+        })();
+    </script>
+</body>
+</html>
