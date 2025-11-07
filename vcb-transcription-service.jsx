@@ -28,7 +28,6 @@ import {
 import {
     LANGUAGES,
     translateTranscript,
-    generateBilingualDocument,
     getTokenBalance,
     addTokens,
     calculateServiceCost,
@@ -41,11 +40,10 @@ import {
     saveSetting,
     getSetting,
     downloadBlob,
-    generateHighCourtDocument,
-    generateHighCourtBilingualDocument,
-    generateProfessionalDocument,
     getAudioDuration
 } from './vcb-features-enhanced';
+
+import { generateHighCourtDoc, generateHighCourtBilingualDoc, generateProfessionalDoc } from './court-documents';
 
 import {
   TranslationSelector,
@@ -2683,39 +2681,19 @@ const VCBTranscriptionService = () => {
             
             if (templateType === 'HIGH_COURT' && hasTranslation) {
                 const translationText = segmentsToFormattedText(result.translations[result.displayLanguage]);
-                docxDocument = generateHighCourtBilingualDocument(transcriptText, translationText, {
-                    caseNumber: result.caseNumber || '[To be completed]',
-                    caseName: result.caseName || '[To be completed]',
-                    division: result.division || '[To be completed]',
-                    hearingDate: result.hearingDate || new Date(result.timestamp || Date.now()).toISOString().split('T')[0],
-                    judge: result.judge || '[To be completed]',
-                    proceedingType: result.proceedingType || 'Hearing',
-                    duration: formatDurationFromSeconds(result.duration || 0),
-                    fileName: result.filename || file.name,
+                docxDocument = generateHighCourtBilingualDoc(transcriptText, translationText, {
+                    caseNumber: '[To be completed]',
+                    division: '[To be completed]',
                     sourceLanguage: 'English',
-                    targetLanguage: result.displayLanguage,
-                    status: 'DRAFT'
+                    targetLanguage: result.displayLanguage
                 });
             } else if (templateType === 'HIGH_COURT') {
-                docxDocument = generateHighCourtDocument(transcriptText, {
-                    caseNumber: result.caseNumber || '[To be completed]',
-                    caseName: result.caseName || '[To be completed]',
-                    division: result.division || '[To be completed]',
-                    hearingDate: result.hearingDate || new Date(result.timestamp || Date.now()).toISOString().split('T')[0],
-                    judge: result.judge || '[To be completed]',
-                    proceedingType: result.proceedingType || 'Hearing',
-                    duration: formatDurationFromSeconds(result.duration || 0),
-                    status: 'DRAFT'
-                });
-            } else if (templateType === 'BILINGUAL' && hasTranslation) {
-                const translationText = segmentsToFormattedText(result.translations[result.displayLanguage]);
-                docxDocument = generateBilingualDocument(transcriptText, translationText, {
-                    sourceLanguage: 'English',
-                    targetLanguage: result.displayLanguage,
-                    fileName: result.filename || file.name
+                docxDocument = generateHighCourtDoc(transcriptText, {
+                    caseNumber: '[To be completed]',
+                    division: '[To be completed]'
                 });
             } else {
-                docxDocument = generateProfessionalDocument(transcriptText, { fileName: result.filename || file.name });
+                docxDocument = generateProfessionalDoc(transcriptText, { fileName: result.filename || file.name });
             }
 
             const documentBlob = await Packer.toBlob(docxDocument);
