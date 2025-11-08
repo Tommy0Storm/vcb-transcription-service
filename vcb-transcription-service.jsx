@@ -197,7 +197,7 @@ const OFFICIAL_LANGUAGES = ['Afrikaans', 'isiNdebele', 'isiXhosa', 'isiZulu', 'S
 const LOCAL_STORAGE_KEY = 'vcbTranscriptionSession_enterprise_v4_premium';
 const MALE_VOICES = ['Puck', 'Fenrir', 'Zephyr'];
 const FEMALE_VOICES = ['Kore', 'Charon'];
-const GEMINI_FILE_SIZE_LIMIT_MB = 32;
+const GEMINI_FILE_SIZE_LIMIT_MB = 300;
 const MAX_FILES_PER_BATCH = 10;
 
 // --- ERROR HANDLING HELPERS ---
@@ -983,7 +983,7 @@ const UploadSection = ({ onFileSelect, onClearAll, files }) => {
                         color: 'var(--color-on-surface-secondary)',
                         margin: 'var(--spacing-2) 0 0 0'
                     }}>
-                        Audio files up to 32MB
+                        Audio files up to 300MB
                     </p>
                 </div>
             </div>
