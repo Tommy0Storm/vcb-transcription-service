@@ -63,15 +63,48 @@ import LocalAIAssistant from './local-ai-assistant';
 
 const fileToBase64WithProgress = (file, onProgress) => {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onprogress = (event) => {
-      if (event.lengthComputable) {
-        onProgress(Math.round((event.loaded / event.total) * 100));
-      }
+    const chunkSize = 1024 * 1024; // 1MB chunks
+    let offset = 0;
+    const chunks = [];
+    
+    const readNextChunk = () => {
+      const slice = file.slice(offset, offset + chunkSize);
+      const reader = new FileReader();
+      
+      reader.onload = (e) => {
+        chunks.push(new Uint8Array(e.target.result));
+        offset += chunkSize;
+        
+        const progress = Math.min(Math.round((offset / file.size) * 100), 100);
+        onProgress(progress);
+        
+        if (offset < file.size) {
+          readNextChunk();
+        } else {
+          // Combine all chunks
+          const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
+          const combined = new Uint8Array(totalLength);
+          let position = 0;
+          for (const chunk of chunks) {
+            combined.set(chunk, position);
+            position += chunk.length;
+          }
+          
+          // Convert to base64
+          let binary = '';
+          const len = combined.byteLength;
+          for (let i = 0; i < len; i++) {
+            binary += String.fromCharCode(combined[i]);
+          }
+          resolve(btoa(binary));
+        }
+      };
+      
+      reader.onerror = (error) => reject(error);
+      reader.readAsArrayBuffer(slice);
     };
-    reader.onload = () => resolve(reader.result.split(',')[1]);
-    reader.onerror = (error) => reject(error);
+    
+    readNextChunk();
   });
 };
 
