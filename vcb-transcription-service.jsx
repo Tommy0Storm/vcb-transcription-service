@@ -1883,7 +1883,7 @@ const ResultCard = ({ file, onExport, onTranslate, onUpdateFile, audioContext, o
 };
 
 // --- MAIN COMPONENT ---
-const VCBTranscriptionService = () => {
+function VCBTranscriptionService() {
     const [files, setFiles] = useState([]);
     const [saveStatus, setSaveStatus] = useState('idle');
     const [tokenRefreshCounter, setTokenRefreshCounter] = useState(0);
@@ -3398,7 +3398,6 @@ Return ONLY the translated transcript in the exact same line-by-line format.`;
         <LocalAIAssistant />
         </React.Fragment>
     );
-};
 }
 
 // Wrap with ErrorBoundary for enterprise-grade error handling
