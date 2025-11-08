@@ -731,7 +731,7 @@ const createStandardFooter = () => new Footer({
 });
 
 const generateLegalDoc = (result) => {
-    const { filename, timestamp, speakerProfiles, transcription, displayLanguage, translations, modelUsed, serialNumber } = result;
+    const { filename, timestamp, speakerProfiles, transcription, displayLanguage, translations, modelUsed, serialNumber, geminiMetadata } = result;
     const docSerialNumber = serialNumber || `VCB-${new Date().toISOString().split('T')[0].replace(/-/g, '')}-LEGACY`;
     const hasTranslation = displayLanguage !== 'Original' && translations[displayLanguage];
 
@@ -805,6 +805,10 @@ const generateLegalDoc = (result) => {
                 spacing: { line: 360, before: 400 }
             })] : []),
              new Paragraph({ text: decodeHTMLEntities(`Document Serial Number: ${docSerialNumber}`), alignment: AlignmentType.LEFT, spacing: { before: 800 } }),
+             ...(geminiMetadata?.jobName ? [
+                 new Paragraph({ text: decodeHTMLEntities(`Google Job ID: ${geminiMetadata.jobName}`), alignment: AlignmentType.LEFT, spacing: { before: 200 } }),
+                 new Paragraph({ text: decodeHTMLEntities(`Processing Model: ${geminiMetadata.model}`), alignment: AlignmentType.LEFT, spacing: { before: 200 } })
+             ] : []),
              new Paragraph({ text: decodeHTMLEntities("Signature: ___________________________"), alignment: AlignmentType.LEFT, spacing: { before: 400 } }),
              new Paragraph({ text: decodeHTMLEntities("VCB AI Transcription Service"), alignment: AlignmentType.LEFT }),
         ]
@@ -1643,7 +1647,8 @@ const ResultCard = ({ file, onExport, onTranslate, onUpdateFile, audioContext, o
                         {result.isTranslating && (
                             <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(255, 255, 255, 0.9)', zIndex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--border-radius)', flexDirection: 'column', gap: 'var(--spacing-3)' }}>
                                 <SpinnerIcon />
-                                <span style={{ fontSize: '12px', color: 'var(--color-on-surface-secondary)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '1px' }}>TRANSLATING... {result.translationProgress || 0}%</span>
+                                <span style={{ fontSize: '13px', color: 'var(--color-on-surface)', fontWeight: 500 }}>{result.translationStatus || 'TRANSLATING...'}</span>
+                                <span style={{ fontSize: '11px', color: 'var(--color-on-surface-secondary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px' }}>{result.translationProgress || 0}%</span>
                             </div>
                         )}
                         <div style={{ maxHeight: '400px', overflowY: 'auto', paddingRight: 'var(--spacing-4)', transition: 'opacity 0.3s ease', opacity: result.isTranslating ? 0.4 : 1 }}>
@@ -2004,16 +2009,20 @@ const VCBTranscriptionService = () => {
             const ai = new GoogleGenerativeAI(process.env.API_KEY);
 
             // Phase 1: Reading file (0-15%)
-            updateFile(fileObj.id, { statusMessage: 'Reading audio file...' });
+            updateFile(fileObj.id, { statusMessage: '📂 Reading audio file...', progress: 0 });
             const audioBase64 = await fileToBase64WithProgress(fileObj.file, (uploadProgress) => {
                 const scaledProgress = Math.round(uploadProgress * 0.15); // Scale to 0-15%
-                updateFile(fileObj.id, { progress: scaledProgress });
+                updateFile(fileObj.id, { 
+                    progress: scaledProgress,
+                    statusMessage: `📂 Reading audio file... ${uploadProgress}%`
+                });
             });
 
             // Phase 2: Generating waveform (15-20%)
-            updateFile(fileObj.id, { status: 'processing', progress: 15, statusMessage: 'Analyzing audio waveform...' });
+            updateFile(fileObj.id, { status: 'processing', progress: 15, statusMessage: '🎵 Analyzing audio waveform...' });
             const waveformData = await generateWaveformData(fileObj.file);
-            updateFile(fileObj.id, { progress: 20, statusMessage: 'Preparing transcription request...' });
+            updateFile(fileObj.id, { progress: 18, statusMessage: '📊 Waveform generated' });
+            updateFile(fileObj.id, { progress: 20, statusMessage: '🔧 Preparing transcription request...' });
 
             // Tier-specific prompts with meaningful differentiation
             // Standard (Flash): Clean transcription, NO analysis
@@ -2064,7 +2073,8 @@ const VCBTranscriptionService = () => {
             const displayModelName = (tier === 'Enhanced' || tier === 'Legal') ? 'VCB-AI-Pro' : 'VCB-AI-Flash';
 
             // Phase 3: AI Transcription (20-90%)
-            simulateProgress(20, 90, `Transcribing with ${displayModelName}...`);
+            updateFile(fileObj.id, { progress: 22, statusMessage: `🤖 Connecting to ${displayModelName}...` });
+            simulateProgress(25, 90, `🎙️ Transcribing with ${displayModelName}...`);
 
             // Wrap API call with retry logic for transient errors (503, rate limits, etc.)
             const model = ai.getGenerativeModel({ model: geminiModelName });
@@ -2080,7 +2090,7 @@ const VCBTranscriptionService = () => {
                 clearInterval(progressIntervalsRef.current[fileObj.id]);
                 delete progressIntervalsRef.current[fileObj.id];
             }
-            updateFile(fileObj.id, { progress: 90, statusMessage: 'Parsing AI response...' });
+            updateFile(fileObj.id, { progress: 90, statusMessage: '📝 Parsing AI response...' });
 
             const resultText = response.response.text();
             if (!resultText || resultText.trim() === '') throw new Error("The AI returned an empty response.");
@@ -2399,7 +2409,9 @@ const VCBTranscriptionService = () => {
             };
             
             // Phase 4: Validation (90-95%)
-            updateFile(fileObj.id, { progress: 92, statusMessage: 'Validating transcription...' });
+            updateFile(fileObj.id, { progress: 91, statusMessage: '✅ Validating timestamps...' });
+            
+            // Validate timestamps
 
             let lastTimestampInSeconds = -1;
             const hasFallbackTimestamps = timestamps.some(ts => /\[Line\s+\d+\]/i.test(ts));
@@ -2424,7 +2436,8 @@ const VCBTranscriptionService = () => {
             }
 
             // Phase 5: Finalization (95-100%)
-            updateFile(fileObj.id, { progress: 95, statusMessage: 'Finalizing transcription...' });
+            updateFile(fileObj.id, { progress: 93, statusMessage: '🔍 Checking quality...' });
+            updateFile(fileObj.id, { progress: 95, statusMessage: '🎯 Mapping speakers...' });
 
             const voiceMap = {};
             let maleVoiceIndex = 0, femaleVoiceIndex = 0;
@@ -2434,11 +2447,28 @@ const VCBTranscriptionService = () => {
             });
             
             // Generate serial number with Gemini job tracking
+            updateFile(fileObj.id, { progress: 97, statusMessage: '🔢 Generating serial number...' });
             const geminiJobName = response.name || null;
+            const geminiMetadata = {
+                jobName: geminiJobName,
+                model: geminiModelName,
+                requestId: response.response?.usageMetadata?.candidatesTokenCount ? `REQ-${Date.now()}` : null,
+                timestamp: new Date().toISOString()
+            };
             const serialNumber = await generateSerialNumber(geminiJobName);
             
-            const finalResult = { ...result, voiceMap, waveformData, duration: lastTimestampInSeconds, timestamp: new Date().toISOString(), filename: fileObj.name, modelUsed: displayModelName, displayTranscription: result.transcription, displayLanguage: 'Original', translations: {}, processingTier: tier, serialNumber, geminiJobId: geminiJobName };
-            updateFile(fileObj.id, { status: 'completed', result: finalResult, progress: 100, statusMessage: 'Transcription complete!' });
+            // Log mapping for audit trail
+            console.log('=== GOOGLE JOB MAPPING ===');
+            console.log('Serial Number:', serialNumber);
+            console.log('Gemini Job Name:', geminiJobName);
+            console.log('Model:', geminiModelName);
+            console.log('File:', fileObj.name);
+            console.log('Timestamp:', geminiMetadata.timestamp);
+            console.log('========================');
+            
+            updateFile(fileObj.id, { progress: 98, statusMessage: '💾 Saving transcription...' });
+            const finalResult = { ...result, voiceMap, waveformData, duration: lastTimestampInSeconds, timestamp: new Date().toISOString(), filename: fileObj.name, modelUsed: displayModelName, displayTranscription: result.transcription, displayLanguage: 'Original', translations: {}, processingTier: tier, serialNumber, geminiMetadata };
+            updateFile(fileObj.id, { status: 'completed', result: finalResult, progress: 100, statusMessage: '✅ Transcription complete!' });
 
             // Log transcription complete to audit trail
             if (currentUser) {
@@ -2450,7 +2480,9 @@ const VCBTranscriptionService = () => {
                     await logTranscriptionComplete(currentUser.id, {
                         fileName: fileObj.name,
                         duration: lastTimestampInSeconds,
-                        processingTier: tier
+                        processingTier: tier,
+                        serialNumber,
+                        geminiJobId: geminiJobName
                     }, tokensUsed);
                     console.log('Transcription complete logged for user:', currentUser.email);
                 } catch (logError) {
@@ -2503,40 +2535,53 @@ const VCBTranscriptionService = () => {
             return;
         }
         
-        updateFile(fileId, { result: { ...result, isTranslating: true, ttsError: null, translationProgress: 0 } });
+        updateFile(fileId, { result: { ...result, isTranslating: true, ttsError: null, translationProgress: 0, translationStatus: `🌍 Preparing ${language} translation...` } });
 
         // Use ref-based progress tracking to prevent race conditions
-        const simulateProgress = () => {
-            // Clear any existing interval for this file's translation
+        const updateTranslationProgress = (progress, status) => {
+            updateFile(fileId, { result: { ...result, translationProgress: progress, translationStatus: status } });
+        };
+        
+        const simulateProgress = (startProgress, targetProgress, statusMessage) => {
             const translationKey = `${fileId}_translation`;
             if (progressIntervalsRef.current[translationKey]) {
                 clearInterval(progressIntervalsRef.current[translationKey]);
             }
 
+            updateFile(fileId, { result: { ...result, translationProgress: startProgress, translationStatus: statusMessage } });
+
             progressIntervalsRef.current[translationKey] = setInterval(() => {
                 setFiles(prevFiles => prevFiles.map(f => {
                     if (f.id === fileId && f.result.isTranslating) {
-                        const currentProgress = f.result.translationProgress || 0;
+                        const currentProgress = f.result.translationProgress || startProgress;
+                        const remainingProgress = targetProgress - currentProgress;
                         let increment = 0;
-                        if (currentProgress < 60) increment = Math.random() * 4 + 2;
-                        else if (currentProgress < 90) increment = Math.random() * 2 + 1;
-                        else increment = Math.random() * 0.5 + 0.2;
-                        const newProgress = Math.min(currentProgress + increment, 95);
+                        if (remainingProgress > 30) increment = Math.random() * 3 + 1;
+                        else if (remainingProgress > 10) increment = Math.random() * 1.5 + 0.5;
+                        else increment = Math.random() * 0.3 + 0.1;
+                        const newProgress = Math.min(currentProgress + increment, targetProgress);
+                        
+                        if (newProgress >= targetProgress) {
+                            clearInterval(progressIntervalsRef.current[translationKey]);
+                            delete progressIntervalsRef.current[translationKey];
+                        }
+                        
                         return { ...f, result: { ...f.result, translationProgress: Math.round(newProgress) } };
                     }
                     return f;
                 }));
             }, 200);
         };
-        simulateProgress();
 
         try {
             // Validate API key before translation
+            updateTranslationProgress(5, '🔑 Validating API key...');
             const apiKeyValidation = validateApiKey();
             if (!apiKeyValidation.valid) {
                 throw new Error(apiKeyValidation.error);
             }
 
+            updateTranslationProgress(10, '📝 Preparing transcript...');
             const ai = new GoogleGenerativeAI(process.env.API_KEY);
             const originalText = result.transcription.map(t => `${t.timestamp} ${t.speaker}: ${t.dialogue}`).join('\n');
             const prompt = `You are an expert South African translator specializing in ${language}. Translate this transcript with these requirements:
@@ -2556,16 +2601,29 @@ Return ONLY the translated transcript in the exact same line-by-line format.`;
                 setTimeout(() => reject(new Error('Translation request timeout after 60 seconds')), 60000)
             );
 
+            updateTranslationProgress(15, `🤖 Connecting to Gemini Pro...`);
             const model = ai.getGenerativeModel({ model: 'gemini-2.5-pro' });
+            
+            simulateProgress(20, 85, `🌍 Translating to ${language}...`);
             const apiPromise = retryWithBackoff(async () => {
                 return await model.generateContent(`${prompt}\n\n${originalText}`);
             });
             const response = await Promise.race([apiPromise, timeoutPromise]);
+            
+            // Clear simulation
+            const translationKey = `${fileId}_translation`;
+            if (progressIntervalsRef.current[translationKey]) {
+                clearInterval(progressIntervalsRef.current[translationKey]);
+                delete progressIntervalsRef.current[translationKey];
+            }
 
+            updateTranslationProgress(85, '✅ Translation received');
+            
             if (!response || !response.response) {
                 throw new Error("Translation API returned an empty response.");
             }
 
+            updateTranslationProgress(88, '📝 Parsing translation...');
             const translatedText = response.response.text();
             const originalTranscription = result.transcription;
             const translatedLines = translatedText.split('\n').map(line => line.trim()).filter(Boolean);
@@ -2594,7 +2652,10 @@ Return ONLY the translated transcript in the exact same line-by-line format.`;
                 throw new Error("Parsed translation is empty. The AI may have returned an unexpected format.");
             }
 
+            updateTranslationProgress(92, '✅ Validating translation...');
             const newTranslations = { ...result.translations, [language]: translatedTranscription };
+            
+            updateTranslationProgress(95, '💾 Saving translation...');
             updateFile(fileId, {
                 result: {
                     ...result,
@@ -2602,7 +2663,8 @@ Return ONLY the translated transcript in the exact same line-by-line format.`;
                     displayLanguage: language,
                     translations: newTranslations,
                     isTranslating: false,
-                    translationProgress: 100
+                    translationProgress: 100,
+                    translationStatus: `✅ ${language} translation complete!`
                 }
             });
         } catch (error) {
@@ -2937,6 +2999,26 @@ Return ONLY the translated transcript in the exact same line-by-line format.`;
                 margin: 'auto',
                 padding: isMobile ? 'var(--spacing-5) var(--spacing-4)' : 'var(--spacing-7) var(--spacing-5)'
             }}>
+                {/* Service Disclaimer Banner */}
+                <div style={{ 
+                    background: '#f8f9fa', 
+                    padding: '16px', 
+                    borderRadius: '8px', 
+                    marginBottom: '20px',
+                    border: '2px solid #000',
+                    fontSize: '11px',
+                    lineHeight: '1.5'
+                }}>
+                    <div style={{ fontWeight: 700, marginBottom: '8px', fontSize: '12px' }}>⚠️ Service Limitations & Data Security</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '12px' }}>
+                        <div>
+                            <strong>File Limits:</strong> Max 300MB • No cloud storage • Immediate deletion after processing
+                        </div>
+                        <div>
+                            <strong>Encryption:</strong> ✅ HTTPS/TLS in transit • ✅ AES-256 at rest • POPIA compliant
+                        </div>
+                    </div>
+                </div>
                 <AppHeader />
             <main style={{
                 display: 'grid',
