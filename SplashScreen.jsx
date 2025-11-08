@@ -96,7 +96,7 @@ const SplashScreen = ({ onLoginSuccess }) => {
           box-shadow: 0 20px 60px rgba(0,0,0,0.6);
           cursor: pointer;
         }
-        .vcb-modal { position: absolute; top: 12%; right: 12%; background: rgba(255,255,255,0.98); padding: 20px; border-radius: 10px; width: 320px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);} 
+        .vcb-modal { position: absolute; top: 5%; right: 8%; background: rgba(255,255,255,0.98); padding: 20px; border-radius: 10px; width: 420px; max-width: 90vw; box-shadow: 0 10px 30px rgba(0,0,0,0.3);} 
       `}</style>
 
       {videoPath ? (
@@ -124,7 +124,61 @@ const SplashScreen = ({ onLoginSuccess }) => {
       )}
 
       {showModal && (
-        <div className="vcb-modal" role="dialog" aria-modal="true">
+        <div className="vcb-modal" role="dialog" aria-modal="true" style={{ maxHeight: '85vh', overflowY: 'auto' }}>
+          {/* Service Limitations & Security Disclaimer */}
+          <div style={{ 
+            background: '#f8f9fa', 
+            padding: '16px', 
+            borderRadius: '8px', 
+            marginBottom: '20px',
+            border: '2px solid #000',
+            fontSize: '12px',
+            lineHeight: '1.6'
+          }}>
+            <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 700, textTransform: 'uppercase' }}>⚠️ Service Limitations & Data Security</h4>
+            
+            <div style={{ marginBottom: '10px' }}>
+              <strong>File Limitations:</strong>
+              <ul style={{ margin: '4px 0', paddingLeft: '20px' }}>
+                <li>Maximum file size: <strong>300MB</strong></li>
+                <li>Maximum single transcription length: <strong>No limit</strong> (depends on file size)</li>
+                <li>Supported formats: MP3, WAV, M4A, OGG, FLAC, AAC</li>
+              </ul>
+            </div>
+
+            <div style={{ marginBottom: '10px' }}>
+              <strong>Data Retention:</strong>
+              <ul style={{ margin: '4px 0', paddingLeft: '20px' }}>
+                <li>Recordings are <strong>NOT stored in the cloud</strong></li>
+                <li>All processing happens via VCB-AI API</li>
+                <li>Transcriptions saved locally in your browser</li>
+                <li>No server-side storage of audio files</li>
+              </ul>
+            </div>
+
+            <div style={{ marginBottom: '10px' }}>
+              <strong>Data Encryption:</strong>
+              <ul style={{ margin: '4px 0', paddingLeft: '20px' }}>
+                <li>✅ <strong>Encrypted in transit:</strong> All uploads use HTTPS/TLS encryption</li>
+                <li>✅ <strong>Encrypted at rest:</strong> VCB-AI API uses AES-256 encryption</li>
+                <li>✅ <strong>Zero-knowledge:</strong> Files deleted immediately after processing</li>
+              </ul>
+            </div>
+
+            <div style={{ marginBottom: '10px' }}>
+              <strong>Privacy & Compliance:</strong>
+              <ul style={{ margin: '4px 0', paddingLeft: '20px' }}>
+                <li>POPIA compliant (South African data protection)</li>
+                <li>No third-party data sharing</li>
+                <li>User authentication via Supabase (encrypted)</li>
+              </ul>
+            </div>
+
+            <p style={{ margin: '10px 0 0 0', fontSize: '11px', color: '#666', fontStyle: 'italic' }}>
+              By using this service, you acknowledge these limitations and confirm you have the right to transcribe the uploaded content.
+            </p>
+          </div>
+
           <h3 style={{ marginTop: 0 }}>{authMode === 'signin' ? 'Sign In' : 'Create Account'}</h3>
 
           <form onSubmit={authMode === 'signin' ? handleSignIn : handleSignUp}>
