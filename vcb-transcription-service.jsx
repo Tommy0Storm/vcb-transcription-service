@@ -44,6 +44,7 @@ import {
 } from './vcb-features-enhanced';
 
 import { generateHighCourtDoc, generateHighCourtBilingualDoc, generateProfessionalDoc } from './court-documents';
+import { generateProfessionalDocument, generateHighCourtDocument, generateHighCourtBilingualDocument } from './document-export-system';
 
 import {
   TranslationSelector,
@@ -1112,7 +1113,30 @@ const TierButton = ({ onClick, children }) => (
     </button>
 );
 
-const FileItem = ({ file, onTranscribe, onRemove }) => (
+const FileItem = ({ file, onTranscribe, onRemove }) => {
+    const [showOptions, setShowOptions] = React.useState(false);
+    const [options, setOptions] = React.useState({
+        speakerProfiles: true,
+        multiSpeaker: true,
+        timestampFormat: 'sentence',
+        autoDetectLanguage: false,
+        multiLanguage: false,
+        noiseReduction: false,
+        audioQuality: false,
+        removeFillers: true,
+        punctuation: true,
+        jsonMode: true,
+        extractMetadata: false,
+        sentimentAnalysis: false,
+        emotionDetection: false,
+        speakingRate: false,
+        pauseDetection: false,
+        customVocabulary: false,
+        redactionMode: false,
+        audioPreCheck: false
+    });
+
+    return (
     <div className="card slide-up" style={{ padding: 'var(--spacing-5)', display: 'flex', flexDirection: 'column', gap: 'var(--spacing-4)', overflow: 'hidden' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 'var(--spacing-4)' }}>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -1182,26 +1206,166 @@ const FileItem = ({ file, onTranscribe, onRemove }) => (
                 paddingTop: 'var(--spacing-4)',
                 marginTop: 'var(--spacing-2)'
             }}>
-                <label style={{
-                    fontWeight: 500,
-                    fontSize: '12px',
-                    marginBottom: 'var(--spacing-3)',
-                    display: 'block',
-                    color: 'var(--color-on-surface-secondary)'
-                }}>
-                    Choose tier:
-                </label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--spacing-3)' }}>
+                    <label style={{
+                        fontWeight: 500,
+                        fontSize: '12px',
+                        color: 'var(--color-on-surface-secondary)'
+                    }}>
+                        Choose tier:
+                    </label>
+                    <button
+                        onClick={() => setShowOptions(!showOptions)}
+                        style={{
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--color-on-surface)',
+                            fontSize: '11px',
+                            cursor: 'pointer',
+                            textDecoration: 'underline',
+                            padding: '2px'
+                        }}
+                    >
+                        {showOptions ? '▼ Hide Options' : '▶ Professional Options'}
+                    </button>
+                </div>
+
+                {showOptions && (
+                    <div style={{
+                        backgroundColor: 'var(--color-background)',
+                        padding: 'var(--spacing-4)',
+                        borderRadius: '6px',
+                        marginBottom: 'var(--spacing-4)',
+                        fontSize: '12px',
+                        maxHeight: '400px',
+                        overflowY: 'auto'
+                    }}>
+                        <div style={{ display: 'grid', gap: 'var(--spacing-3)' }}>
+                            {/* Speaker Detection */}
+                            <div style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: 'var(--spacing-2)' }}>
+                                <div style={{ fontWeight: 600, marginBottom: 'var(--spacing-2)', fontSize: '13px' }}>Speaker Detection</div>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={options.speakerProfiles} onChange={(e) => setOptions({...options, speakerProfiles: e.target.checked})} />
+                                    Speaker profiles (gender, characteristics)
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={options.multiSpeaker} onChange={(e) => setOptions({...options, multiSpeaker: e.target.checked})} />
+                                    Multi-speaker conversation handling
+                                </label>
+                            </div>
+
+                            {/* Timestamp Options */}
+                            <div style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: 'var(--spacing-2)' }}>
+                                <div style={{ fontWeight: 600, marginBottom: 'var(--spacing-2)', fontSize: '13px' }}>Timestamp Format</div>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: 'pointer', marginLeft: 'var(--spacing-3)' }}>
+                                    <input type="radio" name={`ts-${file.id}`} value="sentence" checked={options.timestampFormat === 'sentence'} onChange={() => setOptions({...options, timestampFormat: 'sentence'})} />
+                                    Sentence-level timestamps
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: 'pointer', marginLeft: 'var(--spacing-3)' }}>
+                                    <input type="radio" name={`ts-${file.id}`} value="speaker" checked={options.timestampFormat === 'speaker'} onChange={() => setOptions({...options, timestampFormat: 'speaker'})} />
+                                    Speaker change only
+                                </label>
+                            </div>
+
+                            {/* Language Detection */}
+                            <div style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: 'var(--spacing-2)' }}>
+                                <div style={{ fontWeight: 600, marginBottom: 'var(--spacing-2)', fontSize: '13px' }}>Language Detection</div>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={options.autoDetectLanguage} onChange={(e) => setOptions({...options, autoDetectLanguage: e.target.checked})} />
+                                    Auto-detect source language
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={options.multiLanguage} onChange={(e) => setOptions({...options, multiLanguage: e.target.checked})} />
+                                    Multi-language support (100+ languages)
+                                </label>
+                            </div>
+
+                            {/* Audio Enhancement */}
+                            <div style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: 'var(--spacing-2)' }}>
+                                <div style={{ fontWeight: 600, marginBottom: 'var(--spacing-2)', fontSize: '13px' }}>Audio Enhancement</div>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={options.noiseReduction} onChange={(e) => setOptions({...options, noiseReduction: e.target.checked})} />
+                                    Noise reduction hints
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={options.audioQuality} onChange={(e) => setOptions({...options, audioQuality: e.target.checked})} />
+                                    Audio quality assessment
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={options.removeFillers} onChange={(e) => setOptions({...options, removeFillers: e.target.checked})} />
+                                    Remove filler words (um, uh, like)
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={options.punctuation} onChange={(e) => setOptions({...options, punctuation: e.target.checked})} />
+                                    Auto punctuation & capitalization
+                                </label>
+                            </div>
+
+                            {/* Structured Output */}
+                            <div style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: 'var(--spacing-2)' }}>
+                                <div style={{ fontWeight: 600, marginBottom: 'var(--spacing-2)', fontSize: '13px' }}>Structured Output</div>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={options.jsonMode} onChange={(e) => setOptions({...options, jsonMode: e.target.checked})} />
+                                    JSON mode for transcriptions
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={options.extractMetadata} onChange={(e) => setOptions({...options, extractMetadata: e.target.checked})} />
+                                    Extract metadata (sentiment, topics, keywords)
+                                </label>
+                            </div>
+
+                            {/* Audio Analysis */}
+                            <div style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: 'var(--spacing-2)' }}>
+                                <div style={{ fontWeight: 600, marginBottom: 'var(--spacing-2)', fontSize: '13px' }}>Audio Analysis</div>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={options.sentimentAnalysis} onChange={(e) => setOptions({...options, sentimentAnalysis: e.target.checked})} />
+                                    Sentiment analysis
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={options.emotionDetection} onChange={(e) => setOptions({...options, emotionDetection: e.target.checked})} />
+                                    Emotion detection
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={options.speakingRate} onChange={(e) => setOptions({...options, speakingRate: e.target.checked})} />
+                                    Speaking rate/pace analysis
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={options.pauseDetection} onChange={(e) => setOptions({...options, pauseDetection: e.target.checked})} />
+                                    Silence/pause detection
+                                </label>
+                            </div>
+
+                            {/* Advanced Features */}
+                            <div>
+                                <div style={{ fontWeight: 600, marginBottom: 'var(--spacing-2)', fontSize: '13px' }}>Advanced Features</div>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={options.customVocabulary} onChange={(e) => setOptions({...options, customVocabulary: e.target.checked})} />
+                                    Custom SA legal vocabulary
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={options.redactionMode} onChange={(e) => setOptions({...options, redactionMode: e.target.checked})} />
+                                    POPIA redaction (PII auto-redact)
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)', cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={options.audioPreCheck} onChange={(e) => setOptions({...options, audioPreCheck: e.target.checked})} />
+                                    Audio quality pre-check
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <div style={{
                     display: 'flex',
                     gap: 'var(--spacing-2)'
                 }}>
-                    <TierButton onClick={() => onTranscribe(file, 'Standard')}>
+                    <TierButton onClick={() => onTranscribe(file, 'Standard', options)}>
                         Standard
                     </TierButton>
-                    <TierButton onClick={() => onTranscribe(file, 'Enhanced')}>
+                    <TierButton onClick={() => onTranscribe(file, 'Enhanced', options)}>
                         Enhanced
                     </TierButton>
-                    <TierButton onClick={() => onTranscribe(file, 'Legal')}>
+                    <TierButton onClick={() => onTranscribe(file, 'Legal', options)}>
                         Legal
                     </TierButton>
                 </div>
@@ -1231,6 +1395,52 @@ const WaveformVisualizer = ({ waveformData, duration, playbackTime }) => {
         <div style={{ height: '80px', backgroundColor: 'var(--color-background)', borderRadius: '6px', display: 'flex', alignItems: 'center', padding: '0 var(--spacing-2)', position: 'relative', border: '1px solid var(--color-border)' }}>
             {waveformData.map((d, i) => <div key={i} style={{ height: `${Math.max(2, d * 90)}%`, width: '2px', backgroundColor: '#CED4DA', margin: '0 1px', borderRadius: '1px' }} />)}
             {playbackTime > 0 && <div style={{ position: 'absolute', left: `${playheadPosition}%`, top: 0, bottom: 0, width: '2px', backgroundColor: 'var(--color-primary)' }} />}
+        </div>
+    );
+};
+
+const QualityReportCard = ({ qualityReport }) => {
+    if (!qualityReport) return null;
+    const avgConfidence = qualityReport.averageConfidence || 0;
+    const confidenceColor = avgConfidence >= 0.9 ? '#28a745' : avgConfidence >= 0.7 ? '#ffc107' : '#dc3545';
+    
+    return (
+        <div style={{ border: '1px solid var(--color-border)', padding: 'var(--spacing-5)', borderRadius: 'var(--border-radius)', backgroundColor: 'var(--color-background)' }}>
+            <h4 style={{ margin: '0 0 var(--spacing-4) 0', fontSize: '14px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px' }}>Quality Control Report</h4>
+            <div style={{ display: 'grid', gap: 'var(--spacing-4)' }}>
+                <div>
+                    <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: 'var(--spacing-2)' }}>Average Confidence Score</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-3)' }}>
+                        <div style={{ flex: 1, height: '8px', backgroundColor: 'var(--color-border)', borderRadius: '4px', overflow: 'hidden' }}>
+                            <div style={{ width: `${avgConfidence * 100}%`, height: '100%', backgroundColor: confidenceColor, transition: 'width 0.3s' }}></div>
+                        </div>
+                        <span style={{ fontSize: '14px', fontWeight: 600, color: confidenceColor }}>{(avgConfidence * 100).toFixed(1)}%</span>
+                    </div>
+                </div>
+                {qualityReport.lowConfidenceSegments && qualityReport.lowConfidenceSegments.length > 0 && (
+                    <div>
+                        <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: 'var(--spacing-2)' }}>Low Confidence Segments ({qualityReport.lowConfidenceSegments.length})</div>
+                        <div style={{ fontSize: '13px', color: 'var(--color-on-surface-secondary)' }}>
+                            Review recommended for segments with confidence below 70%
+                        </div>
+                    </div>
+                )}
+                {qualityReport.uncertainWords && qualityReport.uncertainWords.length > 0 && (
+                    <div>
+                        <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: 'var(--spacing-2)' }}>Uncertain Words ({qualityReport.uncertainWords.length})</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--spacing-2)' }}>
+                            {qualityReport.uncertainWords.slice(0, 10).map((word, idx) => (
+                                <span key={idx} style={{ backgroundColor: '#fff3cd', padding: 'var(--spacing-1) var(--spacing-2)', borderRadius: '4px', fontSize: '12px', border: '1px solid #ffc107' }}>
+                                    {word}
+                                </span>
+                            ))}
+                            {qualityReport.uncertainWords.length > 10 && (
+                                <span style={{ fontSize: '12px', color: 'var(--color-on-surface-secondary)' }}>+{qualityReport.uncertainWords.length - 10} more</span>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
     );
 };
@@ -1426,7 +1636,7 @@ const AIActionCard = ({ result, onSummarize, onExtractItems, onToggleTidied }) =
                     {result.isExtracting ? <SpinnerIcon /> : <ActionItemIcon />} Extract Action Items
                 </button>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-3)', padding: '0 var(--spacing-3)', border: '1px solid var(--color-border)', borderRadius: '6px' }}>
-                     <label htmlFor={`tidy-toggle-${result.filename}`} style={{ fontSize: '14px', fontWeight: 500, cursor: result.isTidying ? 'wait' : 'pointer' }}>
+                     <label htmlFor={`tidy-toggle-${result.filename}`} style={{ fontSize: '14px', fontWeight: 500, cursor: result.isTidying ? 'wait' : 'pointer' }} title="Removes filler words (um, uh, you know), repeated words, and stutters while preserving meaning">
                         Tidied View
                      </label>
                      {result.isTidying ? (
@@ -1622,6 +1832,7 @@ const ResultCard = ({ file, onExport, onTranslate, onUpdateFile, audioContext, o
             </header>
             <div style={{ padding: 'var(--spacing-6)', display: 'grid', gap: 'var(--spacing-6)' }}>
                 <WaveformVisualizer waveformData={result.waveformData} duration={result.duration} playbackTime={playbackState.currentTime} />
+                {result.qualityReport && <QualityReportCard qualityReport={result.qualityReport} />}
                 <AIActionCard result={result} onSummarize={() => onGenerateSummary(id)} onExtractItems={() => onExtractActionItems(id)} onToggleTidied={() => onToggleTidiedView(id)} />
                 <DetailedAnalysisCard analysis={result.detailedAnalysis} summary={result.summary} actionItems={result.actionItems} />
                 <div>
@@ -1950,7 +2161,31 @@ const VCBTranscriptionService = () => {
         event.target.value = '';
     };
 
-    const transcribeAudio = async (fileObj, tier) => {
+    const transcribeAudio = async (fileObj, tier, options = {}) => {
+        // Set default options
+        const transcriptionOptions = {
+            speakerProfiles: true,
+            multiSpeaker: true,
+            timestampFormat: 'sentence',
+            autoDetectLanguage: false,
+            multiLanguage: false,
+            noiseReduction: false,
+            audioQuality: false,
+            removeFillers: tier !== 'Legal',
+            punctuation: true,
+            jsonMode: true,
+            extractMetadata: false,
+            sentimentAnalysis: false,
+            emotionDetection: false,
+            speakingRate: false,
+            pauseDetection: false,
+            confidenceScores: tier === 'Legal' || tier === 'Enhanced',
+            uncertaintyFlagging: tier === 'Legal' || tier === 'Enhanced',
+            customVocabulary: false,
+            redactionMode: false,
+            audioPreCheck: false,
+            ...options
+        };
         updateFile(fileObj.id, { status: 'uploading', error: null, progress: 0, processingTier: tier, statusMessage: 'Preparing file...' });
 
         // Log transcription start to audit trail
@@ -2024,39 +2259,96 @@ const VCBTranscriptionService = () => {
             updateFile(fileObj.id, { progress: 18, statusMessage: '📊 Waveform generated' });
             updateFile(fileObj.id, { progress: 20, statusMessage: '🔧 Preparing transcription request...' });
 
+            // Build dynamic prompt based on options
+            const buildPromptInstructions = () => {
+                const instructions = [];
+                if (transcriptionOptions.multiSpeaker) instructions.push('- Detect and label ALL distinct speakers automatically');
+                instructions.push(transcriptionOptions.timestampFormat === 'sentence' ? '- Sentence-level timestamps' : '- Timestamp only on speaker changes');
+                instructions.push('- Timestamps: numeric seconds');
+                instructions.push('- Speakers: SPEAKER 1, SPEAKER 2, SPEAKER 3, etc. (uppercase)');
+                if (transcriptionOptions.removeFillers) instructions.push('- Remove filler words (um, uh, like, you know)');
+                if (transcriptionOptions.punctuation) instructions.push('- Add proper punctuation and capitalization');
+                if (transcriptionOptions.autoDetectLanguage) instructions.push('- Detect and label language per segment');
+                if (transcriptionOptions.multiLanguage) instructions.push('- Support 100+ languages, detect language switches');
+                if (transcriptionOptions.noiseReduction) instructions.push('- Focus on clear speech, ignore background noise');
+                if (transcriptionOptions.audioQuality) instructions.push('- Assess audio quality and flag poor sections');
+                if (transcriptionOptions.jsonMode) instructions.push('- Valid JSON only');
+                return instructions.join('\n');
+            };
+
+            const speakerProfileField = transcriptionOptions.speakerProfiles ? ',"speakerProfiles":[{"speaker":"SPEAKER 1","gender":""${transcriptionOptions.audioQuality ? ',"audioQuality":""' : ''}}]' : '';
+            const languageField = transcriptionOptions.autoDetectLanguage || transcriptionOptions.multiLanguage ? ',"language":"en"' : '';
+            const metadataField = transcriptionOptions.extractMetadata ? ',"metadata":{"sentiment":"","topics":[],"keywords":[]}' : '';
+            const analysisField = (transcriptionOptions.sentimentAnalysis || transcriptionOptions.emotionDetection || transcriptionOptions.speakingRate || transcriptionOptions.pauseDetection) 
+                ? ',"audioAnalysis":{' + 
+                  (transcriptionOptions.sentimentAnalysis ? '"sentiment":"",' : '') +
+                  (transcriptionOptions.emotionDetection ? '"emotion":"",' : '') +
+                  (transcriptionOptions.speakingRate ? '"speakingRate":"",' : '') +
+                  (transcriptionOptions.pauseDetection ? '"pauses":[]' : '') + '}'
+                : '';
+            const confidenceField = transcriptionOptions.confidenceScores ? ',"confidence":0.95' : '';
+            const qualityReportField = (transcriptionOptions.confidenceScores || transcriptionOptions.uncertaintyFlagging || transcriptionOptions.audioPreCheck) 
+                ? ',"qualityReport":{"averageConfidence":0.0,"lowConfidenceSegments":[],"uncertainWords":[]' + 
+                  (transcriptionOptions.audioPreCheck ? ',"audioQuality":{"noiseLevel":"","clarity":"","recommendedTier":""}' : '') + '}'
+                : '';
+
+            // Add analysis instructions
+            const analysisInstructions = [];
+            if (transcriptionOptions.sentimentAnalysis) analysisInstructions.push('- Analyze sentiment (positive/negative/neutral) per segment');
+            if (transcriptionOptions.emotionDetection) analysisInstructions.push('- Detect emotions (calm/angry/nervous/happy/sad)');
+            if (transcriptionOptions.speakingRate) analysisInstructions.push('- Measure speaking rate (words per minute)');
+            if (transcriptionOptions.pauseDetection) analysisInstructions.push('- Detect significant pauses/silences (>2 seconds)');
+            if (transcriptionOptions.confidenceScores) analysisInstructions.push('- Provide confidence score (0.0-1.0) for each segment');
+            if (transcriptionOptions.uncertaintyFlagging) analysisInstructions.push('- Flag uncertain/unclear words or segments');
+            
+            // Custom vocabulary for SA legal terms
+            if (transcriptionOptions.customVocabulary) {
+                analysisInstructions.push('- Use South African legal vocabulary:');
+                analysisInstructions.push('  * VCB AI (not "VCB A.I." or "VCB eye")');
+                analysisInstructions.push('  * Gauteng, KwaZulu-Natal, Western Cape (correct province names)');
+                analysisInstructions.push('  * Afrikaans legal terms: "appellant", "respondent", "getuie" (witness)');
+                analysisInstructions.push('  * Court terms: "magistrate", "advocate", "attorney"');
+            }
+            
+            // POPIA-compliant redaction
+            if (transcriptionOptions.redactionMode) {
+                analysisInstructions.push('- Redact personal information (POPIA compliance):');
+                analysisInstructions.push('  * Personal names → [NAME]');
+                analysisInstructions.push('  * Phone numbers → [PHONE]');
+                analysisInstructions.push('  * Addresses → [ADDRESS]');
+                analysisInstructions.push('  * ID numbers → [ID]');
+                analysisInstructions.push('  * Email addresses → [EMAIL]');
+            }
+            
+            // Audio quality pre-check
+            if (transcriptionOptions.audioPreCheck) {
+                analysisInstructions.push('- Assess audio quality:');
+                analysisInstructions.push('  * Background noise level (low/medium/high)');
+                analysisInstructions.push('  * Speech clarity (clear/muffled/distorted)');
+                analysisInstructions.push('  * Recommend tier (Standard/Enhanced) if quality is poor');
+            }
+
             // Tier-specific prompts with meaningful differentiation
             // Standard (Flash): Clean transcription, NO analysis
-            const standardPrompt = `Transcribe audio. Clean up filler words. Return sentence-level JSON:
+            const standardPrompt = `Transcribe audio with automatic speaker detection. Return sentence-level JSON:
 
-{"transcription":[{"speaker":"SPEAKER 1","start":0.0,"text":""}],"speakerProfiles":[{"speaker":"SPEAKER 1","gender":""}]}
+{"transcription":[{"speaker":"SPEAKER 1","start":0.0,"text":""${languageField}${confidenceField}${analysisField ? ',"analysis":{}' : ''}}]${speakerProfileField}${metadataField}${analysisField}${qualityReportField}}
 
-- Sentence-level (not word-level)
-- Timestamps: numeric seconds
-- Speakers: SPEAKER 1, SPEAKER 2 (uppercase)
-- Remove filler words (um, uh, like, you know)
-- Valid JSON only`;
+${buildPromptInstructions()}${analysisInstructions.length > 0 ? '\n' + analysisInstructions.join('\n') : ''}`;
 
             // Enhanced (Pro): Clean transcription WITH detailed analysis
-            const enhancedPrompt = `Transcribe audio. Clean up filler words. Include detailed analysis. Return sentence-level JSON:
+            const enhancedPrompt = `Transcribe audio with automatic speaker detection. Include detailed analysis. Return sentence-level JSON:
 
-{"transcription":[{"speaker":"SPEAKER 1","start":0.0,"text":""}],"speakerProfiles":[{"speaker":"SPEAKER 1","gender":""}],"detailedAnalysis":{"sentenceComplexity":{"readabilityScore":"","wordsPerSentence":""},"keywordDensity":[{"keyword":"","count":0}]}}
+{"transcription":[{"speaker":"SPEAKER 1","start":0.0,"text":""${languageField}${confidenceField}${analysisField ? ',"analysis":{}' : ''}}]${speakerProfileField}${metadataField}${analysisField}${qualityReportField},"detailedAnalysis":{"sentenceComplexity":{"readabilityScore":"","wordsPerSentence":""},"keywordDensity":[{"keyword":"","count":0}]}}
 
-- Sentence-level (not word-level)
-- Timestamps: numeric seconds
-- Speakers: SPEAKER 1, SPEAKER 2 (uppercase)
-- Remove filler words (um, uh, like, you know)
-- Valid JSON only`;
+${buildPromptInstructions()}${analysisInstructions.length > 0 ? '\n' + analysisInstructions.join('\n') : ''}`;
 
             // Legal (Pro): VERBATIM, NO analysis (keep every word including fillers)
-            const legalPrompt = `VERBATIM transcription. Include every word spoken. Return sentence-level JSON:
+            const legalPrompt = `VERBATIM transcription with automatic speaker detection. Include every word spoken. Return sentence-level JSON:
 
-{"transcription":[{"speaker":"SPEAKER 1","start":0.0,"text":""}],"speakerProfiles":[{"speaker":"SPEAKER 1","gender":""}]}
+{"transcription":[{"speaker":"SPEAKER 1","start":0.0,"text":""${languageField}${confidenceField}${analysisField ? ',"analysis":{}' : ''}}]${speakerProfileField}${qualityReportField}}
 
-- Sentence-level (not word-level)
-- Timestamps: numeric seconds
-- Speakers: SPEAKER 1, SPEAKER 2 (uppercase)
-- Include every word verbatim (keep filler words)
-- Valid JSON only`;
+${buildPromptInstructions().replace('- Remove filler words (um, uh, like, you know)', '- Include every word verbatim (keep filler words)')}${analysisInstructions.length > 0 ? '\n' + analysisInstructions.join('\n') : ''}`;
 
             // Select prompt based on tier
             let selectedPrompt;
@@ -2803,21 +3095,47 @@ Return ONLY the translated transcript in the exact same line-by-line format.`;
             let docxDocument;
             const hasTranslation = result.displayLanguage !== 'Original' && result.translations[result.displayLanguage];
             
+            // Prepare metadata for document generation
+            const metadata = {
+                fileName: result.filename || file.name,
+                projectName: exportOptions.projectName || 'N/A',
+                sourceFileName: result.filename || file.name,
+                recordingDate: new Date(result.timestamp).toISOString().split('T')[0],
+                duration: result.duration ? formatDurationFromSeconds(result.duration) : 'N/A',
+                sourceLanguage: 'English',
+                targetLanguage: result.displayLanguage,
+                translationText: hasTranslation ? segmentsToFormattedText(result.translations[result.displayLanguage]) : null,
+                // Executive summary fields (if available)
+                summaryObjective: result.summary || null,
+                summaryKeyPoints: result.actionItems ? result.actionItems.join('\n• ') : null,
+                summaryActions: null,
+                // Legal document fields
+                caseNumber: exportOptions.caseNumber || '[To be completed]',
+                caseName: exportOptions.caseName || '[To be completed]',
+                division: exportOptions.division || '[To be completed]',
+                hearingDate: exportOptions.hearingDate || new Date().toISOString().split('T')[0],
+                judge: exportOptions.judge || '[To be completed]',
+                court: exportOptions.court || 'High',
+                transcriber: 'VCB AI Transcription Service',
+                certificationDate: new Date().toISOString().split('T')[0],
+                // Translator fields (for bilingual)
+                translatorName: exportOptions.translatorName || '[To be completed]',
+                translatorDivision: exportOptions.translatorDivision || '[To be completed]',
+                translatorSATI: exportOptions.translatorSATI || '[To be completed]'
+            };
+            
+            // Use new document export system
             if (templateType === 'HIGH_COURT' && hasTranslation) {
                 const translationText = segmentsToFormattedText(result.translations[result.displayLanguage]);
-                docxDocument = generateHighCourtBilingualDoc(transcriptText, translationText, {
-                    caseNumber: '[To be completed]',
-                    division: '[To be completed]',
-                    sourceLanguage: 'English',
-                    targetLanguage: result.displayLanguage
-                });
+                docxDocument = generateHighCourtBilingualDocument(transcriptText, translationText, metadata);
             } else if (templateType === 'HIGH_COURT') {
-                docxDocument = generateHighCourtDoc(transcriptText, {
-                    caseNumber: '[To be completed]',
-                    division: '[To be completed]'
-                });
+                docxDocument = generateHighCourtDocument(transcriptText, metadata);
+            } else if (templateType === 'BILINGUAL' && hasTranslation) {
+                // Professional bilingual (sequential format)
+                docxDocument = generateProfessionalDocument(transcriptText, metadata, { templateType: 'BILINGUAL' });
             } else {
-                docxDocument = generateProfessionalDoc(transcriptText, { fileName: result.filename || file.name });
+                // Standard professional
+                docxDocument = generateProfessionalDocument(transcriptText, metadata, { templateType: 'PROFESSIONAL' });
             }
 
             const documentBlob = await Packer.toBlob(docxDocument);
@@ -2827,11 +3145,12 @@ Return ONLY the translated transcript in the exact same line-by-line format.`;
             const wordCount = transcriptText.split(/\s+/).filter(w => w.length > 0).length;
             const templateSuffix = templateType === 'HIGH_COURT' ? 'HighCourt' : templateType === 'BILINGUAL' ? 'Bilingual' : 'Professional';
             const langSuffix = hasTranslation ? `_${result.displayLanguage}` : '';
-            link.download = `${date}_${wordCount}words_${templateSuffix}${langSuffix}.docx`;
+            link.download = `VCB_${date}_${wordCount}words_${templateSuffix}${langSuffix}.docx`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
             URL.revokeObjectURL(link.href);
+            showToast('Document exported successfully!', 'success');
         } catch (error) {
             console.error('Export error:', error);
             showToast(`Export failed: ${error.message}`, 'error');
