@@ -3398,13 +3398,16 @@ Return ONLY the translated transcript in the exact same line-by-line format.`;
         <LocalAIAssistant />
         </React.Fragment>
     );
+    }
 };
 
-// Wrap with ErrorBoundary for enterprise-grade error handling (§1.3, §8.1)
-const VCBTranscriptionServiceWithErrorBoundary = () => (
-    <ErrorBoundary>
-        <VCBTranscriptionService />
-    </ErrorBoundary>
-);
+// Wrap with ErrorBoundary for enterprise-grade error handling
+function VCBTranscriptionServiceWithErrorBoundary() {
+    return (
+        <ErrorBoundary>
+            <VCBTranscriptionService />
+        </ErrorBoundary>
+    );
+}
 
 export default VCBTranscriptionServiceWithErrorBoundary;
