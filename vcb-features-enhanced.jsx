@@ -171,48 +171,21 @@ Return ONLY the translated transcript in the exact same format.`;
  * Parse transcript text into structured segments
  */
 export const parseTranscriptSegments = (transcriptText) => {
-  const segments = [];
-  const lines = transcriptText.split('\n');
-
-  let currentSegment = null;
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    // Match timestamp: [HH:MM:SS]
-    const timestampMatch = trimmed.match(/^\[(\d{2}):(\d{2}):(\d{2})\]$/);
-    if (timestampMatch) {
-      if (currentSegment) {
-        segments.push(currentSegment);
-      }
-      currentSegment = {
-        timestamp: trimmed,
-        speaker: '',
-        text: ''
-      };
-      continue;
-    }
-
-    // Match speaker: **SPEAKER NAME:**
-    const speakerMatch = trimmed.match(/^\*\*(.+?)\*\*:?\s*(.*)$/);
-    if (speakerMatch && currentSegment) {
-      currentSegment.speaker = speakerMatch[1];
-      currentSegment.text = speakerMatch[2];
-      continue;
-    }
-
-    // Continuation of text
-    if (currentSegment && currentSegment.speaker) {
-      currentSegment.text += (currentSegment.text ? ' ' : '') + trimmed;
+  const entries = [];
+  const lines = transcriptText.split('\n').filter(l => l.trim() && !l.startsWith('#'));
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i].trim();
+    if (line.match(/^SPEAKER \d+ \[[\d:]+\]$/)) {
+      const speaker = line;
+      const content = lines[i + 1]?.trim() || '';
+      entries.push({ speaker, content });
+      i += 2;
+    } else {
+      i++;
     }
   }
-
-  if (currentSegment && currentSegment.speaker) {
-    segments.push(currentSegment);
-  }
-
-  return segments;
+  return entries;
 };
 
 /**
@@ -603,11 +576,13 @@ export const generateProfessionalDocument = (transcriptText, metadata = {}) => {
     new Paragraph({ text: `Recording Type:           ${metadata.recordingType || 'Audio'}`, spacing: { after: 80 } }),
     new Paragraph({ text: `Location:                 ${metadata.location || 'Not Specified'}`, spacing: { after: 240 } }),
 
-    // PARTICIPANTS
-    new Paragraph({ text: "PARTICIPANTS", bold: true, spacing: { after: 80 } }),
-    new Paragraph({ text: "─────────────────────────────────────────────────────────────────", spacing: { after: 120 } }),
-    ...uniqueSpeakers.map((speaker, i) => new Paragraph({ text: `Speaker ${i + 1}: ${speaker}  | Role: [Not Specified]`, spacing: { after: 80 } })),
-    new Paragraph({ text: "", spacing: { after: 160 } }),
+    // PARTICIPANTS (if needed)
+    ...(uniqueSpeakers.length > 0 ? [
+      new Paragraph({ text: "PARTICIPANTS", bold: true, spacing: { after: 80 } }),
+      new Paragraph({ text: "─────────────────────────────────────────────────────────────────", spacing: { after: 120 } }),
+      ...uniqueSpeakers.map((speaker, i) => new Paragraph({ text: `Speaker ${i + 1}: ${speaker}  | Role: [Not Specified]`, spacing: { after: 80 } })),
+      new Paragraph({ text: "", spacing: { after: 160 } })
+    ] : []),
 
     // TRANSCRIPTION DETAILS
     new Paragraph({ text: "TRANSCRIPTION DETAILS", bold: true, spacing: { after: 80 } }),
@@ -662,6 +637,7 @@ export const generateProfessionalDocument = (transcriptText, metadata = {}) => {
 export const generateHighCourtDocument = (transcriptText, metadata = {}) => {
   const segments = parseTranscriptSegments(transcriptText);
   const wordCount = transcriptText.split(/\s+/).filter(w => w.length > 0).length;
+  const uniqueSpeakers = Array.from(new Set(segments.map(s => s.speaker).filter(Boolean)));
 
   const headerParagraphs = [
     // Title
@@ -722,32 +698,21 @@ export const generateHighCourtDocument = (transcriptText, metadata = {}) => {
   const contentParagraphs = [];
   let lineNumber = 10;
 
-  // Add witness header if provided
-  if (metadata.witnessName) {
-    contentParagraphs.push(new Paragraph({
-      text: `WITNESS: ${metadata.witnessName.toUpperCase()}`,
-      bold: true,
-      spacing: { before: 480, after: 480 }
-    }));
-  }
-
-  segments.forEach((segment) => {
-    contentParagraphs.push(new Paragraph({ children: [new TextRun({ text: decodeHTMLEntities(segment.timestamp), bold: true, size: 22, font: 'Times New Roman', color: '000000' })], spacing: { before: 480, after: 240 } }));
-    contentParagraphs.push(new Paragraph({ children: [new TextRun({ text: decodeHTMLEntities(`${segment.speaker.toUpperCase()}:`), bold: true, size: 22, font: 'Times New Roman', color: '000000' })], spacing: { after: 240 } }));
-
-    const lines = segment.text.split(/(?<=[.!?])\s+/);
-    lines.forEach(line => {
-      const showLineNumber = (lineNumber % 10 === 0);
-      const decodedLine = decodeHTMLEntities(line);
-      contentParagraphs.push(new Paragraph({
+  segments.forEach((segment, idx) => {
+    contentParagraphs.push(
+      new Paragraph({ text: decodeHTMLEntities(segment.speaker), spacing: { after: 100 } }),
+      new Paragraph({ text: decodeHTMLEntities(segment.content), spacing: { after: 200 } }),
+      new Paragraph({ 
         children: [
-          new TextRun({ text: decodedLine, size: 22, font: 'Times New Roman', color: '000000' })
+          new TextRun(decodeHTMLEntities(segment.speaker)),
+          new TextRun({ text: `     ${lineNumber}`, break: 0 })
         ],
-        spacing: { before: 480, after: 480 },
-        ...(showLineNumber ? { alignment: AlignmentType.RIGHT, children: [new TextRun({ text: `${decodedLine}                    ${lineNumber}`, size: 22, font: 'Times New Roman', color: '000000' })] } : {})
-      }));
-      lineNumber++;
-    });
+        spacing: { after: 100 },
+        alignment: AlignmentType.RIGHT
+      }),
+      new Paragraph({ text: decodeHTMLEntities(segment.content), spacing: { after: 400 } })
+    );
+    lineNumber += 10;
   });
 
   const footerParagraphs = [
@@ -770,7 +735,7 @@ export const generateHighCourtDocument = (transcriptText, metadata = {}) => {
 
   return new Document({
     sections: [{ properties: { page: { margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 } } }, children: [...headerParagraphs, ...contentParagraphs, ...footerParagraphs] }],
-    styles: { default: { document: { run: { font: 'Times New Roman', size: 22 } } } }
+    styles: { default: { document: { run: { font: 'Arial', size: 24 } } } }
   });
 };
 
@@ -887,49 +852,26 @@ export const generateHighCourtBilingualDocument = (transcriptText, translationTe
 
   // Content rows with line numbers every 10 lines (on right margin)
   for (let i = 0; i < Math.max(sourceSegments.length, targetSegments.length); i++) {
-    const sourceSegment = sourceSegments[i] || { speaker: '', timestamp: '', text: '' };
-    const targetSegment = targetSegments[i] || { speaker: '', timestamp: '', text: '' };
-    const showLineNumber = (lineNumber % 10 === 0);
+    const eng = sourceSegments[i] || { speaker: '', content: '' };
+    const afr = targetSegments[i] || { speaker: '', content: '' };
 
     // Build source cell content
     const sourceChildren = [
-      new Paragraph({
-        children: [new TextRun({ text: decodeHTMLEntities(sourceSegment.timestamp), bold: true, size: 22, font: 'Times New Roman', color: '000000' })],
-        spacing: { after: 80 }
-      }),
-      new Paragraph({
-        children: [
-          new TextRun({ text: decodeHTMLEntities(`${sourceSegment.speaker.toUpperCase()}:`), bold: true, size: 22, font: 'Times New Roman', color: '000000' })
-        ],
-        spacing: { after: 80 }
-      }),
-      new Paragraph({
-        children: [
-          new TextRun({ text: decodeHTMLEntities(sourceSegment.text), size: 22, font: 'Times New Roman', color: '000000' })
-        ],
-        spacing: { before: 480, after: 480 },
-        ...(showLineNumber ? { alignment: AlignmentType.RIGHT, children: [new TextRun({ text: `${decodeHTMLEntities(sourceSegment.text)}                    ${lineNumber}`, size: 22, font: 'Times New Roman', color: '000000' })]} : {})
-      })
+      new Paragraph({ text: decodeHTMLEntities(eng.speaker), spacing: { after: 100 } }),
+      new Paragraph({ text: decodeHTMLEntities(eng.content), spacing: { after: 200 } })
     ];
 
-    // Build target cell content
+    // Build target cell content with line number
     const targetChildren = [
-      new Paragraph({
-        children: [new TextRun({ text: decodeHTMLEntities(targetSegment.timestamp || sourceSegment.timestamp), bold: true, size: 22, font: 'Times New Roman', color: '000000' })],
-        spacing: { after: 80 }
-      }),
-      new Paragraph({
+      new Paragraph({ 
         children: [
-          new TextRun({ text: decodeHTMLEntities(`${targetSegment.speaker.toUpperCase() || sourceSegment.speaker.toUpperCase()}:`), bold: true, size: 22, font: 'Times New Roman', color: '000000' })
+          new TextRun(decodeHTMLEntities(afr.speaker)),
+          new TextRun({ text: `     ${lineNumber}`, break: 0 })
         ],
-        spacing: { after: 80 }
+        spacing: { after: 100 },
+        alignment: AlignmentType.RIGHT
       }),
-      new Paragraph({
-        children: [
-          new TextRun({ text: decodeHTMLEntities(targetSegment.text || '[Translation pending]'), size: 22, font: 'Times New Roman', color: '000000', italics: !targetSegment.text })
-        ],
-        spacing: { before: 480, after: 480 }
-      })
+      new Paragraph({ text: decodeHTMLEntities(afr.content), spacing: { after: 400 } })
     ];
 
     tableRows.push(new TableRow({
@@ -1000,7 +942,7 @@ export const generateHighCourtBilingualDocument = (transcriptText, translationTe
     styles: {
       default: {
         document: {
-          run: { font: 'Times New Roman', size: 22 }
+          run: { font: 'Arial', size: 24 }
         }
       }
     }
