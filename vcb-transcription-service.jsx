@@ -2526,14 +2526,24 @@ const VCBTranscriptionService = () => {
 
             const ai = new GoogleGenerativeAI(process.env.API_KEY);
             const originalText = result.transcription.map(t => `${t.timestamp} ${t.speaker}: ${t.dialogue}`).join('\n');
-            const prompt = `Translate the following transcript into ${language}. IMPORTANT: Preserve the original speaker labels and timestamps exactly as they appear on each line. Return ONLY the translated transcript in the same line-by-line format.`;
+            const prompt = `You are an expert South African translator specializing in ${language}. Translate this transcript with these requirements:
+
+1. PRESERVE FORMAT: Keep timestamps [HH:MM:SS] and speaker labels exactly as shown
+2. CULTURAL CONTEXT: Maintain South African cultural nuances, idioms, and expressions
+3. REGISTER: Match the formality level (formal/informal) of the original
+4. LEGAL TERMS: For legal/court terminology, use standard ${language} legal vocabulary
+5. NATURAL FLOW: Ensure translation sounds natural to native ${language} speakers
+6. RESPECT MARKERS: Preserve honorifics and respect markers appropriate to ${language} culture
+7. CODE-SWITCHING: If original contains English terms commonly used in ${language} speech, keep them
+
+Return ONLY the translated transcript in the exact same line-by-line format.`;
 
             // Add timeout to translation request
             const timeoutPromise = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error('Translation request timeout after 60 seconds')), 60000)
             );
 
-            const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash' });
+            const model = ai.getGenerativeModel({ model: 'gemini-2.5-pro' });
             const apiPromise = retryWithBackoff(async () => {
                 return await model.generateContent(`${prompt}\n\n${originalText}`);
             });
