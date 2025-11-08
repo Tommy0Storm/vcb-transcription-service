@@ -216,14 +216,23 @@ const decodePCMAudioData = async (pcmData, audioContext) => {
     return audioBuffer;
 };
 
-const generateSerialNumber = () => {
+const generateSerialNumber = async (geminiJobName = null) => {
     const date = new Date();
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
-    const randomPart1 = Math.random().toString(36).substring(2, 7).toUpperCase();
-    const randomPart2 = Math.random().toString(36).substring(2, 7).toUpperCase();
-    return `VCB-${year}${month}${day}-${randomPart1}-${randomPart2}`;
+    
+    // Extract job ID from Gemini API response if available
+    let jobId = 'LOCAL';
+    if (geminiJobName) {
+        // Gemini job names format: "projects/{project}/locations/{location}/operations/{operation_id}"
+        const match = geminiJobName.match(/operations\/([^\/]+)$/);
+        if (match) {
+            jobId = match[1].substring(0, 8).toUpperCase();
+        }
+    }
+    
+    return `VCB-${year}${month}${day}-${jobId}`;
 };
 
 const OFFICIAL_LANGUAGES = ['Afrikaans', 'isiNdebele', 'isiXhosa', 'isiZulu', 'Sepedi', 'Sesotho', 'Setswana', 'siSwati', 'Tshivenḓa', 'Xitsonga'];
@@ -722,8 +731,8 @@ const createStandardFooter = () => new Footer({
 });
 
 const generateLegalDoc = (result) => {
-    const { filename, timestamp, speakerProfiles, transcription, displayLanguage, translations, modelUsed } = result;
-    const serialNumber = generateSerialNumber();
+    const { filename, timestamp, speakerProfiles, transcription, displayLanguage, translations, modelUsed, serialNumber } = result;
+    const docSerialNumber = serialNumber || `VCB-${new Date().toISOString().split('T')[0].replace(/-/g, '')}-LEGACY`;
     const hasTranslation = displayLanguage !== 'Original' && translations[displayLanguage];
 
     const decodeHTMLEntities = (text) => {
@@ -764,7 +773,7 @@ const generateLegalDoc = (result) => {
             new Paragraph({ text: decodeHTMLEntities(hasTranslation ? "TRANSCRIPT OF AUDIO RECORDING AND CERTIFIED TRANSLATION" : "TRANSCRIPT OF AUDIO RECORDING"), heading: HeadingLevel.HEADING_1, alignment: AlignmentType.CENTER, spacing: { after: 400 } }),
             new Paragraph({ text: `Date of Recording: ${new Date(timestamp).toLocaleDateString()}`, alignment: AlignmentType.CENTER }),
             new Paragraph({ text: `Date of Transcription: ${new Date().toLocaleDateString()}`, alignment: AlignmentType.CENTER }),
-            new Paragraph({ text: `Serial Number: ${serialNumber}`, alignment: AlignmentType.CENTER }),
+            new Paragraph({ text: `Serial Number: ${docSerialNumber}`, alignment: AlignmentType.CENTER }),
             new Paragraph({ text: "", pageBreakBefore: true }),
             // Speaker Index
             new Paragraph({ text: decodeHTMLEntities("SPEAKER INDEX"), heading: HeadingLevel.HEADING_2, alignment: AlignmentType.CENTER, spacing: { after: 400 } }),
@@ -795,7 +804,7 @@ const generateLegalDoc = (result) => {
                 alignment: AlignmentType.JUSTIFIED,
                 spacing: { line: 360, before: 400 }
             })] : []),
-             new Paragraph({ text: decodeHTMLEntities(`Document Serial Number: ${serialNumber}`), alignment: AlignmentType.LEFT, spacing: { before: 800 } }),
+             new Paragraph({ text: decodeHTMLEntities(`Document Serial Number: ${docSerialNumber}`), alignment: AlignmentType.LEFT, spacing: { before: 800 } }),
              new Paragraph({ text: decodeHTMLEntities("Signature: ___________________________"), alignment: AlignmentType.LEFT, spacing: { before: 400 } }),
              new Paragraph({ text: decodeHTMLEntities("VCB AI Transcription Service"), alignment: AlignmentType.LEFT }),
         ]
@@ -2424,7 +2433,11 @@ const VCBTranscriptionService = () => {
                 else { voiceMap[profile.speaker] = MALE_VOICES[maleVoiceIndex++ % MALE_VOICES.length]; }
             });
             
-            const finalResult = { ...result, voiceMap, waveformData, duration: lastTimestampInSeconds, timestamp: new Date().toISOString(), filename: fileObj.name, modelUsed: displayModelName, displayTranscription: result.transcription, displayLanguage: 'Original', translations: {}, processingTier: tier };
+            // Generate serial number with Gemini job tracking
+            const geminiJobName = response.name || null;
+            const serialNumber = await generateSerialNumber(geminiJobName);
+            
+            const finalResult = { ...result, voiceMap, waveformData, duration: lastTimestampInSeconds, timestamp: new Date().toISOString(), filename: fileObj.name, modelUsed: displayModelName, displayTranscription: result.transcription, displayLanguage: 'Original', translations: {}, processingTier: tier, serialNumber, geminiJobId: geminiJobName };
             updateFile(fileObj.id, { status: 'completed', result: finalResult, progress: 100, statusMessage: 'Transcription complete!' });
 
             // Log transcription complete to audit trail
