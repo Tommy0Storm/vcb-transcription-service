@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import SplashScreen from './SplashScreen';
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import JSZip from 'jszip';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, PageNumber, Header as DocxHeader, Footer, Table, TableRow, TableCell, WidthType, VerticalAlign, PageBreak, BorderStyle } from 'docx';
 
@@ -1512,7 +1512,7 @@ const ResultCard = ({ file, onExport, onTranslate, onUpdateFile, audioContext, o
                 throw new Error(apiKeyValidation.error);
             }
 
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const ai = new GoogleGenerativeAI(process.env.API_KEY);
             const voiceName = result.voiceMap[segment.speaker];
             const prompt = `Read this aloud naturally: "${segment.dialogue}"`;
 
@@ -1521,11 +1521,14 @@ const ResultCard = ({ file, onExport, onTranslate, onUpdateFile, audioContext, o
                 setTimeout(() => reject(new Error('TTS request timeout after 30 seconds')), 30000)
             );
 
-            const apiPromise = ai.models.generateContent({
-                model: "gemini-2.5-flash-preview-tts",
-                contents: [{ parts: [{ text: prompt }] }],
-                config: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } } }
+            const model = ai.getGenerativeModel({ 
+                model: "gemini-2.0-flash-exp",
+                generationConfig: { 
+                    responseModalities: ['AUDIO'], 
+                    speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } } 
+                }
             });
+            const apiPromise = model.generateContent(prompt);
 
             const response = await Promise.race([apiPromise, timeoutPromise]);
 
@@ -1989,7 +1992,7 @@ const VCBTranscriptionService = () => {
         };
 
         try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const ai = new GoogleGenerativeAI(process.env.API_KEY);
 
             // Phase 1: Reading file (0-15%)
             updateFile(fileObj.id, { statusMessage: 'Reading audio file...' });
@@ -2055,11 +2058,11 @@ const VCBTranscriptionService = () => {
             simulateProgress(20, 90, `Transcribing with ${displayModelName}...`);
 
             // Wrap API call with retry logic for transient errors (503, rate limits, etc.)
+            const model = ai.getGenerativeModel({ model: geminiModelName });
             const response = await retryWithBackoff(async () => {
-                return await ai.models.generateContent({
-                    model: geminiModelName,
-                    contents: { parts: [audioPart, textPart] },
-                    config: { responseMimeType: 'application/json' }
+                return await model.generateContent({
+                    contents: [{ parts: [audioPart, textPart] }],
+                    generationConfig: { responseMimeType: 'application/json' }
                 });
             });
 
@@ -2070,7 +2073,7 @@ const VCBTranscriptionService = () => {
             }
             updateFile(fileObj.id, { progress: 90, statusMessage: 'Parsing AI response...' });
 
-            const resultText = response.text;
+            const resultText = response.response.text();
             if (!resultText || resultText.trim() === '') throw new Error("The AI returned an empty response.");
 
             let result;
@@ -2521,7 +2524,7 @@ const VCBTranscriptionService = () => {
                 throw new Error(apiKeyValidation.error);
             }
 
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const ai = new GoogleGenerativeAI(process.env.API_KEY);
             const originalText = result.transcription.map(t => `${t.timestamp} ${t.speaker}: ${t.dialogue}`).join('\n');
             const prompt = `Translate the following transcript into ${language}. IMPORTANT: Preserve the original speaker labels and timestamps exactly as they appear on each line. Return ONLY the translated transcript in the same line-by-line format.`;
 
@@ -2530,16 +2533,17 @@ const VCBTranscriptionService = () => {
                 setTimeout(() => reject(new Error('Translation request timeout after 60 seconds')), 60000)
             );
 
+            const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash' });
             const apiPromise = retryWithBackoff(async () => {
-                return await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: `${prompt}\n\n${originalText}` });
+                return await model.generateContent(`${prompt}\n\n${originalText}`);
             });
             const response = await Promise.race([apiPromise, timeoutPromise]);
 
-            if (!response || !response.text) {
+            if (!response || !response.response) {
                 throw new Error("Translation API returned an empty response.");
             }
 
-            const translatedText = response.text;
+            const translatedText = response.response.text();
             const originalTranscription = result.transcription;
             const translatedLines = translatedText.split('\n').map(line => line.trim()).filter(Boolean);
             let translatedTranscription = [];
@@ -2613,7 +2617,7 @@ const VCBTranscriptionService = () => {
                 throw new Error(apiKeyValidation.error);
             }
 
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const ai = new GoogleGenerativeAI(process.env.API_KEY);
             const transcriptText = file.result.transcription.map(t => `${t.speaker}: ${t.dialogue}`).join('\n');
             const prompt = `Provide a concise, professional summary of the following transcript. Focus on the main topics and key decisions made. The summary should be a single paragraph.`;
 
@@ -2622,16 +2626,17 @@ const VCBTranscriptionService = () => {
                 setTimeout(() => reject(new Error('Summary generation timeout after 45 seconds')), 45000)
             );
 
+            const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash' });
             const apiPromise = retryWithBackoff(async () => {
-                return await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: `${prompt}\n\n${transcriptText}` });
+                return await model.generateContent(`${prompt}\n\n${transcriptText}`);
             });
             const response = await Promise.race([apiPromise, timeoutPromise]);
 
-            if (!response || !response.text) {
+            if (!response || !response.response) {
                 throw new Error("Summary API returned an empty response.");
             }
 
-            updateFile(fileId, { result: { ...file.result, summary: response.text, isSummarizing: false } });
+            updateFile(fileId, { result: { ...file.result, summary: response.response.text(), isSummarizing: false } });
         } catch (error) {
             console.error("Summary Generation Error:", error);
             const categorized = categorizeError(error);
@@ -2657,7 +2662,7 @@ const VCBTranscriptionService = () => {
                 throw new Error(apiKeyValidation.error);
             }
 
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const ai = new GoogleGenerativeAI(process.env.API_KEY);
             const transcriptText = file.result.transcription.map(t => `${t.speaker}: ${t.dialogue}`).join('\n');
             const prompt = `Analyze the following transcript and extract all specific action items. For each action item, identify the task, who is assigned to it (if mentioned), and any deadlines. Present the result as a clear, bulleted list. If no action items are found, respond with 'No action items identified.'`;
 
@@ -2666,16 +2671,17 @@ const VCBTranscriptionService = () => {
                 setTimeout(() => reject(new Error('Action item extraction timeout after 45 seconds')), 45000)
             );
 
+            const model = ai.getGenerativeModel({ model: 'gemini-2.5-pro' });
             const apiPromise = retryWithBackoff(async () => {
-                return await ai.models.generateContent({ model: 'gemini-2.5-pro', contents: `${prompt}\n\n${transcriptText}` });
+                return await model.generateContent(`${prompt}\n\n${transcriptText}`);
             });
             const response = await Promise.race([apiPromise, timeoutPromise]);
 
-            if (!response || !response.text) {
+            if (!response || !response.response) {
                 throw new Error("Action items API returned an empty response.");
             }
 
-            const items = response.text.split('\n').filter(line => line.trim() !== '' && line.trim() !== 'No action items identified.');
+            const items = response.response.text().split('\n').filter(line => line.trim() !== '' && line.trim() !== 'No action items identified.');
             updateFile(fileId, { result: { ...file.result, actionItems: items.length > 0 ? items : ['No action items identified.'], isExtracting: false } });
         } catch (error) {
             console.error("Action Item Extraction Error:", error);
@@ -2772,7 +2778,7 @@ const VCBTranscriptionService = () => {
                     throw new Error(apiKeyValidation.error);
                 }
 
-                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+                const ai = new GoogleGenerativeAI(process.env.API_KEY);
                 const originalTranscript = file.result.transcription;
                 const prompt = `Tidy up the following transcript by removing filler words (like 'um', 'uh', 'you know'), repeated words, and stutters. Do not change the core meaning or the sentence structure. Return ONLY the tidied dialogue for each segment in the exact same JSON format as the input, including speaker and timestamp. Ensure the output is a valid JSON array.`;
 
@@ -2781,28 +2787,29 @@ const VCBTranscriptionService = () => {
                     setTimeout(() => reject(new Error('Tidied view generation timeout after 60 seconds')), 60000)
                 );
 
+                const model = ai.getGenerativeModel({ 
+                    model: 'gemini-2.5-flash',
+                    generationConfig: { responseMimeType: 'application/json' }
+                });
                 const apiPromise = retryWithBackoff(async () => {
-                    return await ai.models.generateContent({
-                        model: 'gemini-2.5-flash',
-                        contents: `${prompt}\n\n${JSON.stringify(originalTranscript, null, 2)}`,
-                        config: { responseMimeType: 'application/json' }
-                    });
+                    return await model.generateContent(`${prompt}\n\n${JSON.stringify(originalTranscript, null, 2)}`);
                 });
 
                 const response = await Promise.race([apiPromise, timeoutPromise]);
 
                 console.log("Tidied View - Full response object:", response);
-                console.log("Tidied View - Response text type:", typeof response?.text);
-                console.log("Tidied View - Response text preview:", response?.text?.substring(0, 200));
+                const responseText = response.response.text();
+                console.log("Tidied View - Response text type:", typeof responseText);
+                console.log("Tidied View - Response text preview:", responseText?.substring(0, 200));
 
-                if (!response || !response.text) {
+                if (!response || !responseText) {
                     console.error("Tidied view response structure:", JSON.stringify(response, null, 2));
                     throw new Error("Tidied view API returned an empty response.");
                 }
 
                 let tidiedJson;
                 try {
-                    const cleanedText = response.text.replace(/```json|```/g, '').trim();
+                    const cleanedText = responseText.replace(/```json|```/g, '').trim();
                     console.log("Tidied View - Cleaned response text:", cleanedText.substring(0, 300));
                     tidiedJson = JSON.parse(cleanedText);
                 } catch (parseError) {
