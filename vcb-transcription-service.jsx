@@ -2276,7 +2276,7 @@ const VCBTranscriptionService = () => {
                 return instructions.join('\n');
             };
 
-            const speakerProfileField = transcriptionOptions.speakerProfiles ? ',"speakerProfiles":[{"speaker":"SPEAKER 1","gender":""${transcriptionOptions.audioQuality ? ',"audioQuality":""' : ''}}]' : '';
+            const speakerProfileField = transcriptionOptions.speakerProfiles ? ',"speakerProfiles":[{"speaker":"SPEAKER 1","gender":""}]' : '';
             const languageField = transcriptionOptions.autoDetectLanguage || transcriptionOptions.multiLanguage ? ',"language":"en"' : '';
             const metadataField = transcriptionOptions.extractMetadata ? ',"metadata":{"sentiment":"","topics":[],"keywords":[]}' : '';
             const analysisField = (transcriptionOptions.sentimentAnalysis || transcriptionOptions.emotionDetection || transcriptionOptions.speakingRate || transcriptionOptions.pauseDetection) 
