@@ -73,13 +73,13 @@ export default function UltraPremiumApp() {
 function TranscribeView({ onComplete }) {
   const [file, setFile] = useState(null);
   const [processing, setProcessing] = useState(false);
-  const [options, setOptions] = useState({ language: 'English', sentiment: false, format: 'none' });
+  const [options, setOptions] = useState({ sentiment: false, format: 'none' });
 
   const handleTranscribe = async () => {
     if (!file) return;
     setProcessing(true);
     try {
-      await transcribeAndSave(file, options.language, {
+      await transcribeAndSave(file, 'auto-detect', {
         detectSentiment: options.sentiment,
         premiumFormat: options.format !== 'none' ? options.format : null
       });
@@ -102,21 +102,8 @@ function TranscribeView({ onComplete }) {
       {file && (
         <>
           <div style={{ marginTop: '32px' }}>
-            <div className="ultra-form-group">
-              <label className="ultra-label">Language</label>
-              <select className="ultra-select" value={options.language} onChange={(e) => setOptions({...options, language: e.target.value})}>
-                <option>English</option>
-                <option>Afrikaans</option>
-                <option>Zulu</option>
-                <option>Xhosa</option>
-                <option>Sotho</option>
-                <option>Tswana</option>
-                <option>Pedi</option>
-                <option>Venda</option>
-                <option>Tsonga</option>
-                <option>Swati</option>
-                <option>Ndebele</option>
-              </select>
+            <div style={{ padding: '16px', background: 'rgba(212,175,55,0.1)', border: '1px solid var(--premium-gold)', borderRadius: '12px', marginBottom: '24px' }}>
+              <p style={{ color: 'var(--premium-gold)', fontSize: '14px', fontWeight: '500' }}>🌍 AUTO-DETECT: Language will be automatically detected from audio</p>
             </div>
 
             <div className="ultra-form-group">
@@ -137,7 +124,7 @@ function TranscribeView({ onComplete }) {
             </div>
           </div>
 
-          <button className="ultra-btn ultra-btn-primary" style={{ width: '100%', marginTop: '32px' }} onClick={handleTranscribe} disabled={processing}>
+          <button className="ultra-btn ultra-btn-primary" style={{ width: '100%', marginTop: '24px' }} onClick={handleTranscribe} disabled={processing}>
             {processing ? '⏳ PROCESSING...' : '🚀 START TRANSCRIPTION'}
           </button>
         </>
@@ -274,21 +261,9 @@ function SettingsView() {
 
       <div className="ultra-card">
         <h3 style={{ fontSize: '20px', marginBottom: '20px' }}>Preferences</h3>
-        <div className="ultra-form-group">
-          <label className="ultra-label">Default Language</label>
-          <select className="ultra-select">
-            <option>English</option>
-            <option>Afrikaans</option>
-            <option>Zulu</option>
-            <option>Xhosa</option>
-            <option>Sotho</option>
-            <option>Tswana</option>
-            <option>Pedi</option>
-            <option>Venda</option>
-            <option>Tsonga</option>
-            <option>Swati</option>
-            <option>Ndebele</option>
-          </select>
+        <div style={{ padding: '16px', background: 'rgba(212,175,55,0.1)', border: '1px solid var(--premium-gold)', borderRadius: '12px' }}>
+          <p style={{ color: 'var(--premium-gold)', fontSize: '14px', fontWeight: '500' }}>🌍 Language Auto-Detection Enabled</p>
+          <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: '13px', marginTop: '8px' }}>All 11 South African languages are automatically detected</p>
         </div>
       </div>
     </>
