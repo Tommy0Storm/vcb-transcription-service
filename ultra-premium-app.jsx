@@ -112,8 +112,8 @@ function TranscribeView({ onComplete, tokenBalance }) {
     if (!file) return;
     
     // Check token balance
-    const duration = await getAudioDuration(file);
-    const cost = calculateServiceCost(duration / 60, { 
+    const durationInfo = await getAudioDuration(file);
+    const cost = calculateServiceCost(durationInfo.minutes, { 
       translation: false,
       sentiment: options.sentiment,
       premium: options.format !== 'none'
