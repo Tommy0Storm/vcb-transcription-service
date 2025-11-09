@@ -1388,6 +1388,7 @@ const FileItem = ({ file, onTranscribe, onRemove }) => {
         )}
     </div>
 );
+};
 
 const WaveformVisualizer = ({ waveformData, duration, playbackTime }) => {
     const playheadPosition = duration > 0 ? (playbackTime / duration) * 100 : 0;
