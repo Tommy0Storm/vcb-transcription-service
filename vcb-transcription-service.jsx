@@ -281,7 +281,7 @@ const categorizeError = (error) => {
     }
 
     // Network errors
-    if (message.includes('network') || message.includes('fetch failed') || message.includes('ECONNREFUSED') || message.includes('timeout')) {
+    if (message.includes('network') || message.includes('fetch failed') || message.includes('ECONNREFUSED') || message.includes('timeout') || message.includes('ERR_NETWORK_CHANGED')) {
         return {
             type: 'network',
             userMessage: 'Network connection failed. Please check your internet connection.',
