@@ -1,33 +1,61 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './ultra-premium.css';
 import { transcribeAndSave } from './ai-transcript-handler.js';
 import { getAllTranscripts, deleteTranscript, initDB } from './transcript-storage.js';
 import { downloadLogsJSON, downloadLogsCSV, downloadLogsTXT } from './log-downloader.js';
-import { getUserAuditLogs, getCurrentUser } from './supabase-client.js';
+import { getCurrentUser, getTokenBalanceFromSupabase, updateTokenBalanceInSupabase } from './supabase-client.js';
+import { getTokenBalance, addTokens, calculateServiceCost, deductTokens, getAudioDuration } from './vcb-features-enhanced.jsx';
+import { TokenBalanceWidget, TokenPurchasePage, AuthenticationWidget, POPIAWarningModal } from './vcb-components-enhanced.jsx';
+import LocalAIAssistant from './local-ai-assistant.jsx';
 
-const VIEWS = { TRANSCRIBE: 'transcribe', LIBRARY: 'library', LOGS: 'logs', SETTINGS: 'settings' };
+const VIEWS = { TRANSCRIBE: 'transcribe', LIBRARY: 'library', LOGS: 'logs', SETTINGS: 'settings', BUY_TOKENS: 'buy-tokens' };
 
 export default function UltraPremiumApp() {
   const [view, setView] = useState(VIEWS.TRANSCRIBE);
-  const [tokens, setTokens] = useState(1000);
+  const [tokenBalance, setTokenBalance] = useState({ tokensRemaining: 0 });
   const [transcripts, setTranscripts] = useState([]);
-  const [logs, setLogs] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [tokenRefreshCounter, setTokenRefreshCounter] = useState(0);
+  const audioContextRef = useRef(null);
 
   useEffect(() => {
     initDB();
     loadData();
+    loadTokenBalance();
+    audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    return () => audioContextRef.current?.close();
   }, []);
+
+  useEffect(() => {
+    getCurrentUser().then(user => {
+      setCurrentUser(user);
+      if (user) syncTokens(user);
+    });
+  }, []);
+
+  const syncTokens = async (user) => {
+    if (!user) return;
+    try {
+      const localBalance = await getTokenBalance();
+      const cloudBalance = await getTokenBalanceFromSupabase(user.id);
+      if (cloudBalance && cloudBalance.total_tokens > 0) {
+        setTokenBalance({ tokensRemaining: cloudBalance.tokens_remaining });
+      } else if (localBalance) {
+        setTokenBalance(localBalance);
+      }
+    } catch (e) {}
+  };
+
+  const loadTokenBalance = async () => {
+    try {
+      const balance = await getTokenBalance();
+      setTokenBalance(balance);
+    } catch (e) {}
+  };
 
   const loadData = async () => {
     const t = await getAllTranscripts();
     setTranscripts(t);
-    try {
-      const user = await getCurrentUser();
-      if (user) {
-        const l = await getUserAuditLogs(user.id, 100);
-        setLogs(l || []);
-      }
-    } catch (e) {}
   };
 
   return (
@@ -35,8 +63,8 @@ export default function UltraPremiumApp() {
       <div className="ultra-header">
         <div className="ultra-logo">🎙️ VCB TRANSCRIPTION</div>
         <div className="ultra-tokens">
-          <div className="token-display">{tokens} TOKENS</div>
-          <button className="ultra-btn ultra-btn-primary">BUY TOKENS</button>
+          <div className="token-display">{tokenBalance.tokensRemaining || 0} TOKENS</div>
+          <button className="ultra-btn ultra-btn-primary" onClick={() => setView(VIEWS.BUY_TOKENS)}>BUY TOKENS</button>
         </div>
       </div>
 
@@ -45,7 +73,6 @@ export default function UltraPremiumApp() {
           {[
             { id: VIEWS.TRANSCRIBE, icon: '🎤', label: 'Transcribe' },
             { id: VIEWS.LIBRARY, icon: '📚', label: 'Library' },
-            { id: VIEWS.LOGS, icon: '📊', label: 'Activity' },
             { id: VIEWS.SETTINGS, icon: '⚙️', label: 'Settings' }
           ].map(item => (
             <div
@@ -60,25 +87,45 @@ export default function UltraPremiumApp() {
         </div>
 
         <div className="ultra-content">
-          {view === VIEWS.TRANSCRIBE && <TranscribeView onComplete={loadData} />}
+          {view === VIEWS.TRANSCRIBE && <TranscribeView onComplete={() => { loadData(); loadTokenBalance(); }} tokenBalance={tokenBalance} />}
           {view === VIEWS.LIBRARY && <LibraryView transcripts={transcripts} onUpdate={loadData} />}
-          {view === VIEWS.LOGS && <LogsView logs={logs} />}
-          {view === VIEWS.SETTINGS && <SettingsView />}
+          {view === VIEWS.BUY_TOKENS && <TokenPurchasePage currentUser={currentUser} />}
+          {view === VIEWS.SETTINGS && <SettingsView currentUser={currentUser} onAuthChange={setCurrentUser} />}
         </div>
       </div>
     </div>
+    <AuthenticationWidget currentUser={currentUser} onAuthChange={setCurrentUser} />
+    <TokenBalanceWidget currentUser={currentUser} onRefresh={tokenRefreshCounter} />
+    <POPIAWarningModal currentUser={currentUser} onAccept={() => console.log('POPIA Accepted')} />
+    <LocalAIAssistant />
+  </>
   );
 }
 
-function TranscribeView({ onComplete }) {
+function TranscribeView({ onComplete, tokenBalance }) {
   const [file, setFile] = useState(null);
   const [processing, setProcessing] = useState(false);
   const [options, setOptions] = useState({ sentiment: false, format: 'none' });
 
   const handleTranscribe = async () => {
     if (!file) return;
+    
+    // Check token balance
+    const duration = await getAudioDuration(file);
+    const cost = calculateServiceCost(duration / 60, { 
+      translation: false,
+      sentiment: options.sentiment,
+      premium: options.format !== 'none'
+    });
+    
+    if (tokenBalance.tokensRemaining < cost.tokens) {
+      alert(`❌ Insufficient tokens. Need ${cost.tokens}, have ${tokenBalance.tokensRemaining}`);
+      return;
+    }
+    
     setProcessing(true);
     try {
+      await deductTokens(cost.tokens, `Transcription: ${file.name}`);
       await transcribeAndSave(file, 'auto-detect', {
         detectSentiment: options.sentiment,
         premiumFormat: options.format !== 'none' ? options.format : null
@@ -246,7 +293,7 @@ function LogsView({ logs }) {
   );
 }
 
-function SettingsView() {
+function SettingsView({ currentUser, onAuthChange }) {
   return (
     <>
       <h1 className="ultra-title">Settings</h1>
@@ -255,8 +302,11 @@ function SettingsView() {
         <h3 style={{ fontSize: '20px', marginBottom: '20px' }}>Account</h3>
         <div className="ultra-form-group">
           <label className="ultra-label">Email</label>
-          <input className="ultra-input" type="email" value="user@example.com" readOnly />
+          <input className="ultra-input" type="email" value={currentUser?.email || 'Not signed in'} readOnly />
         </div>
+        {currentUser && (
+          <button className="ultra-btn ultra-btn-secondary" onClick={() => { /* sign out */ }}>Sign Out</button>
+        )}
       </div>
 
       <div className="ultra-card">
