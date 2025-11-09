@@ -64,8 +64,26 @@ export async function transcribeAndSave(audioFile, language = 'English', options
 
 // Add translation to existing transcript (supports multiple)
 export async function translateAndUpdate(transcriptId, targetLanguage) {
-  const { addTranslation } = await import('./translation-manager.js');
-  return addTranslation(transcriptId, targetLanguage);
+  try {
+    const { getTranscript, saveTranscript } = await import('./transcript-storage.js');
+    const transcript = await getTranscript(transcriptId);
+    if (!transcript) throw new Error('Transcript not found');
+
+    const { text } = await generateText({
+      model: google('gemini-1.5-flash'),
+      prompt: `Translate to ${targetLanguage}:\n\n${transcript.transcription}`
+    });
+
+    const translation = { language: targetLanguage, text, timestamp: Date.now() };
+    transcript.translations = transcript.translations || [];
+    transcript.translations.push(translation);
+    
+    await saveTranscript(transcript);
+    return translation;
+  } catch (error) {
+    console.error('Translation failed:', error);
+    throw error;
+  }
 }
 
 // Stream transcription (for real-time display)
