@@ -1,7 +1,7 @@
 // AI SDK Integration for Transcription with Storage
 import { generateText } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { saveTranscript } from './transcript-storage.js';
+import { saveTranscript, getTranscript } from './transcript-storage.js';
 import { analyzeSentiment } from './sentiment-analyzer.js';
 import { formatPremiumTranscript, generateCourtFormat, generateMeetingMinutes } from './premium-formatter.js';
 
@@ -62,65 +62,52 @@ export async function transcribeAndSave(audioFile, language = 'English', options
   }
 }
 
-// Add translation to existing transcript (supports multiple)
 export async function translateAndUpdate(transcriptId, targetLanguage) {
-  try {
-    const { getTranscript, saveTranscript } = await import('./transcript-storage.js');
-    const transcript = await getTranscript(transcriptId);
-    if (!transcript) throw new Error('Transcript not found');
+  const transcript = await getTranscript(transcriptId);
+  if (!transcript) throw new Error('Transcript not found');
 
-    const { text } = await generateText({
-      model: google('gemini-1.5-flash'),
-      prompt: `Translate to ${targetLanguage}:\n\n${transcript.transcription}`
-    });
+  const { text } = await generateText({
+    model: google('gemini-1.5-flash'),
+    prompt: `Translate to ${targetLanguage}:\n\n${transcript.transcription}`
+  });
 
-    const translation = { language: targetLanguage, text, timestamp: Date.now() };
-    transcript.translations = transcript.translations || [];
-    transcript.translations.push(translation);
-    
-    await saveTranscript(transcript);
-    return translation;
-  } catch (error) {
-    console.error('Translation failed:', error);
-    throw error;
-  }
+  const translation = { language: targetLanguage, text, timestamp: Date.now() };
+  transcript.translations = transcript.translations || [];
+  transcript.translations.push(translation);
+  
+  await saveTranscript(transcript);
+  return translation;
 }
 
-// Stream transcription (for real-time display)
 export async function streamTranscription(audioFile, language = 'English', onChunk) {
-  try {
-    const { streamText } = await import('ai');
-    const audioData = await audioFile.arrayBuffer();
-    const base64Audio = btoa(String.fromCharCode(...new Uint8Array(audioData)));
-    
-    const result = streamText({
-      model: google('gemini-1.5-flash'),
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: `Transcribe this audio in ${language}:` },
-            { type: 'file', data: base64Audio, mimeType: audioFile.type }
-          ]
-        }
-      ]
-    });
+  const { streamText } = await import('ai');
+  const audioData = await audioFile.arrayBuffer();
+  const base64Audio = btoa(String.fromCharCode(...new Uint8Array(audioData)));
+  
+  const result = streamText({
+    model: google('gemini-1.5-flash'),
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: `Transcribe this audio in ${language}:` },
+          { type: 'file', data: base64Audio, mimeType: audioFile.type }
+        ]
+      }
+    ]
+  });
 
-    let fullText = '';
-    for await (const chunk of result.textStream) {
-      fullText += chunk;
-      if (onChunk) onChunk(chunk, fullText);
-    }
-
-    const id = await saveTranscript({
-      audioName: audioFile.name,
-      language,
-      transcription: fullText,
-    });
-
-    return { id, transcription: fullText };
-  } catch (error) {
-    console.error('Stream transcription failed:', error);
-    throw error;
+  let fullText = '';
+  for await (const chunk of result.textStream) {
+    fullText += chunk;
+    if (onChunk) onChunk(chunk, fullText);
   }
+
+  const id = await saveTranscript({
+    audioName: audioFile.name,
+    language,
+    transcription: fullText,
+  });
+
+  return { id, transcription: fullText };
 }
