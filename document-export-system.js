@@ -42,7 +42,7 @@ const parseTranscriptSegments = (transcriptText) => {
             const nextLine = lines[i + 1].trim();
             
             // Match speaker and text pattern on next line
-            const speakerMatch = nextLine.match(/^\*\*([^:]+):\*\*\s*(.*)$/);
+            const speakerMatch = nextLine.match(/^\*\*([^*]+)\*\*:\s*(.*)$/);
             
             if (speakerMatch) {
                 segments.push({
@@ -56,7 +56,7 @@ const parseTranscriptSegments = (transcriptText) => {
         }
         
         // Fallback: try single-line format [HH:MM:SS] **SPEAKER:** text
-        const singleLineMatch = line.match(/^\[(\d{2}:\d{2}:\d{2})\]\s+\*\*([^:]+):\*\*\s*(.*)$/);
+        const singleLineMatch = line.match(/^\[(\d{2}:\d{2}:\d{2})\]\s+\*\*([^*]+)\*\*:\s*(.*)$/);
         if (singleLineMatch) {
             segments.push({
                 timestamp: singleLineMatch[1],
