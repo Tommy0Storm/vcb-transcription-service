@@ -1,6 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import VCBTranscriptionService from './vcb-transcription-service.jsx';
+import UltraPremiumApp from './ultra-premium-app.jsx';
 
 const App = () => {
   return (
@@ -232,7 +232,7 @@ const App = () => {
           }
         `}
       </style>
-      <VCBTranscriptionService />
+      <UltraPremiumApp />
     </>
   );
 };
