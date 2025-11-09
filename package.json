@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@ai-sdk/google": "^2.0.29",
     "@google/genai": "^1.28.0",
     "@google/generative-ai": "^0.24.1",
     "@supabase/ssr": "^0.7.0",
