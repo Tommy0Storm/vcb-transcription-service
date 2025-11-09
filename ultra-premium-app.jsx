@@ -110,6 +110,12 @@ function TranscribeView({ onComplete }) {
                 <option>Zulu</option>
                 <option>Xhosa</option>
                 <option>Sotho</option>
+                <option>Tswana</option>
+                <option>Pedi</option>
+                <option>Venda</option>
+                <option>Tsonga</option>
+                <option>Swati</option>
+                <option>Ndebele</option>
               </select>
             </div>
 
@@ -273,6 +279,15 @@ function SettingsView() {
           <select className="ultra-select">
             <option>English</option>
             <option>Afrikaans</option>
+            <option>Zulu</option>
+            <option>Xhosa</option>
+            <option>Sotho</option>
+            <option>Tswana</option>
+            <option>Pedi</option>
+            <option>Venda</option>
+            <option>Tsonga</option>
+            <option>Swati</option>
+            <option>Ndebele</option>
           </select>
         </div>
       </div>

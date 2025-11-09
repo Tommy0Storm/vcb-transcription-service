@@ -257,11 +257,17 @@ body::before {
   transition: all 0.3s;
 }
 
+.ultra-select option {
+  background: var(--premium-dark);
+  color: #fff;
+}
+
 .ultra-input:focus, .ultra-select:focus {
   outline: none;
   border-color: var(--premium-gold);
   background: rgba(255,255,255,0.08);
   box-shadow: 0 0 0 4px rgba(212,175,55,0.1);
+  color: #fff;
 }
 
 /* Badge */
