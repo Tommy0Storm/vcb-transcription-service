@@ -59,6 +59,7 @@ export default function UltraPremiumApp() {
   };
 
   return (
+    <>
     <div className="ultra-app">
       <div className="ultra-header">
         <div className="ultra-logo">🎙️ VCB TRANSCRIPTION</div>
@@ -98,7 +99,7 @@ export default function UltraPremiumApp() {
     <TokenBalanceWidget currentUser={currentUser} onRefresh={tokenRefreshCounter} />
     <POPIAWarningModal currentUser={currentUser} onAccept={() => console.log('POPIA Accepted')} />
     <LocalAIAssistant />
-  </>
+    </>
   );
 }
 
